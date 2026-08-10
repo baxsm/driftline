@@ -5,6 +5,8 @@ export const SEQUENCE_PATH = process.env.E2E_SEQUENCE_PATH ?? "";
 export const EMPTY_DIR = process.env.E2E_EMPTY_DIR ?? "";
 /** A short rendered sequence, so a whole run finishes inside a test. */
 export const RUN_SEQUENCE_PATH = process.env.E2E_RUN_SEQUENCE_PATH ?? "";
+/** A rendered sequence carrying ground truth, so a run over it can be scored. */
+export const SCORABLE_SEQUENCE_PATH = process.env.E2E_SCORABLE_SEQUENCE_PATH ?? "";
 
 export function uniqueEmail(): string {
   const suffix = Math.random().toString(36).slice(2, 10);

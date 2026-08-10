@@ -6,12 +6,20 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Button } from "@/components/ui/button";
 import type { Pose } from "@/lib/types";
 
+/** Used when the stylesheet has not loaded, so the marker is never an invisible black dot. */
+const ESTIMATE_MARKER_FALLBACK = "#8b7fe8";
+
 export interface TrajectoryPath {
   poses: Pose[];
   /** A colour token like `--truth-path`, read from the stylesheet at draw time. */
   colorToken: string;
   fallbackColor: string;
   label: string;
+  /**
+   * Per pose error, one value per pose, colouring the line from the low to the high token.
+   * When present the flat colour is not used, and the legend says what the ramp means.
+   */
+  errors?: number[];
 }
 
 interface TrajectoryViewerProps {
@@ -19,6 +27,13 @@ interface TrajectoryViewerProps {
   paths: TrajectoryPath[];
   /** Shown when there is nothing to draw, so the canvas is never a silent black box. */
   emptyMessage: string;
+  /**
+   * Index into the first path carrying errors, marked with a dot so the plot, the slider and
+   * the 3D view all point at the same pose.
+   */
+  markerIndex?: number | null;
+  /** Legend caption for the error ramp, e.g. "0 to 12 cm". */
+  errorLegend?: string;
 }
 
 /**
@@ -46,8 +61,11 @@ function readColor(token: string, fallback: string): THREE.Color {
 /**
  * Draws a path as one BufferGeometry. The room sequences run to a few thousand poses and a
  * per pose object for each would cost thousands of draw calls for a single line.
+ *
+ * When errors are supplied each vertex is coloured between the low and high tokens, so the
+ * shape of the drift is visible on the path itself rather than only in the plot.
  */
-function buildPathGeometry(poses: Pose[]): THREE.BufferGeometry {
+function buildPathGeometry(poses: Pose[], errors?: number[]): THREE.BufferGeometry {
   const positions = new Float32Array(poses.length * 3);
   for (let index = 0; index < poses.length; index += 1) {
     const pose = poses[index];
@@ -57,6 +75,23 @@ function buildPathGeometry(poses: Pose[]): THREE.BufferGeometry {
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+
+  if (errors && errors.length === poses.length) {
+    const low = readColor("--error-low", "#3fc0c8");
+    const high = readColor("--error-high", "#e2724a");
+    // the ramp is relative to this run's own worst pose. An absolute scale would leave an
+    // accurate run drawn entirely in the "good" colour with no visible structure at all.
+    const worst = Math.max(...errors);
+    const colors = new Float32Array(poses.length * 3);
+    const mixed = new THREE.Color();
+    for (let index = 0; index < poses.length; index += 1) {
+      mixed.copy(low).lerp(high, worst > 0 ? errors[index] / worst : 0);
+      colors[index * 3] = mixed.r;
+      colors[index * 3 + 1] = mixed.g;
+      colors[index * 3 + 2] = mixed.b;
+    }
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  }
   return geometry;
 }
 
@@ -64,6 +99,11 @@ interface Extent {
   centre: THREE.Vector3;
   /** Half the diagonal of the path's bounding box, which is what the camera frames. */
   radius: number;
+  /**
+   * The longest single axis of the path. A trajectory is often far longer than it is wide,
+   * and half a diagonal understates that length, so the grid is sized from this instead.
+   */
+  longestAxis: number;
   /** Vertical size, used to drop the grid to the floor of the path rather than through it. */
   height: number;
 }
@@ -81,13 +121,23 @@ function pathExtent(paths: TrajectoryPath[]): Extent {
   return {
     centre,
     radius: Math.max(size.length() / 2, 0.5),
+    longestAxis: Math.max(size.x, size.y, size.z),
     height: size.y,
   };
 }
 
-const TrajectoryViewer: FC<TrajectoryViewerProps> = ({ paths, emptyMessage }) => {
+const TrajectoryViewer: FC<TrajectoryViewerProps> = ({
+  paths,
+  emptyMessage,
+  markerIndex = null,
+  errorLegend,
+}) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const resetRef = useRef<(() => void) | null>(null);
+  // the marker is state rather than a ref so that moving it depends on the scene existing.
+  // With a ref, the effect that positions it would run before the scene had created it and
+  // would have nothing to move.
+  const [marker, setMarker] = useState<THREE.Mesh | null>(null);
   const [ready, setReady] = useState(false);
 
   const drawable = paths.filter((path) => path.poses.length > 0);
@@ -113,7 +163,7 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({ paths, emptyMessage }) =>
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     mount.appendChild(renderer.domElement);
 
-    const { centre, radius, height } = pathExtent(drawable);
+    const { centre, radius, longestAxis, height } = pathExtent(drawable);
 
     // clip planes follow the path size so a small room and a long outdoor run both stay in
     // range without z fighting at one end or clipping at the other
@@ -125,7 +175,12 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({ paths, emptyMessage }) =>
     // the grid is a scale reference, so it stays close to the path's own size. Making it
     // several times larger pushes the camera back to frame the grid and the trajectory ends
     // up a dot in the middle.
-    const grid = new THREE.GridHelper(radius * 1.5, 12, 0x3a3f47, 0x24282e);
+    //
+    // `radius` is half the bounding box diagonal, which for a long thin path is about half
+    // its length. Sizing the grid from the longest axis instead keeps it under the whole
+    // path rather than under the middle third of it.
+    const gridSpan = Math.max(longestAxis, radius) * 1.2;
+    const grid = new THREE.GridHelper(gridSpan, 12, 0x3a3f47, 0x24282e);
     grid.position.set(centre.x, centre.y - height / 2, centre.z);
     scene.add(grid);
 
@@ -134,13 +189,29 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({ paths, emptyMessage }) =>
     scene.add(axes);
 
     const drawn = drawable.map((path) => {
-      const geometry = buildPathGeometry(path.poses);
-      const material = new THREE.LineBasicMaterial({
-        color: readColor(path.colorToken, path.fallbackColor),
-      });
+      const coloured = Boolean(path.errors && path.errors.length === path.poses.length);
+      const geometry = buildPathGeometry(path.poses, path.errors);
+      const material = new THREE.LineBasicMaterial(
+        coloured
+          ? { vertexColors: true }
+          : { color: readColor(path.colorToken, path.fallbackColor) },
+      );
       scene.add(new THREE.Line(geometry, material));
       return { geometry, material };
     });
+
+    // one small sphere marking the pose the plots and the slider are pointing at, sized
+    // against the path so it stays visible on a long run and does not swamp a short one.
+    // It takes the estimate's own colour rather than the foreground, because a near white
+    // dot sitting on the near white truth line is invisible exactly where it matters.
+    const markerGeometry = new THREE.SphereGeometry(radius * 0.03, 16, 16);
+    const markerMaterial = new THREE.MeshBasicMaterial({
+      color: readColor("--estimate-path", ESTIMATE_MARKER_FALLBACK),
+    });
+    const markerMesh = new THREE.Mesh(markerGeometry, markerMaterial);
+    markerMesh.visible = false;
+    scene.add(markerMesh);
+    setMarker(markerMesh);
 
     function resetView() {
       // distance is derived from the vertical field of view so the path fills the frame at
@@ -184,6 +255,9 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({ paths, emptyMessage }) =>
         geometry.dispose();
         material.dispose();
       }
+      markerGeometry.dispose();
+      markerMaterial.dispose();
+      setMarker(null);
       grid.dispose();
       axes.dispose();
       renderer.dispose();
@@ -192,6 +266,21 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({ paths, emptyMessage }) =>
       setReady(false);
     };
   }, [signature, totalPoses]);
+
+  /**
+   * Move the marker without rebuilding the scene.
+   *
+   * Selecting a pose changes one object's position. Putting `markerIndex` in the effect that
+   * builds the scene would tear down and recreate the whole renderer on every step of the
+   * slider, resetting the camera mid-drag.
+   */
+  const markedPath = drawable.find((path) => path.errors)?.poses;
+  useEffect(() => {
+    if (!marker) return;
+    const pose = markerIndex === null ? undefined : markedPath?.[markerIndex];
+    marker.visible = Boolean(pose);
+    if (pose) marker.position.set(pose.tx, pose.ty, pose.tz);
+  }, [marker, markerIndex, markedPath]);
 
   if (totalPoses === 0) {
     // a viewer with nothing in it does not need viewer sized space. Keeping the full height
@@ -212,9 +301,19 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({ paths, emptyMessage }) =>
             <span
               aria-hidden="true"
               className="h-0.5 w-4 rounded-full"
-              style={{ backgroundColor: `var(${path.colorToken}, ${path.fallbackColor})` }}
+              style={
+                path.errors
+                  ? {
+                      backgroundImage:
+                        "linear-gradient(to right, var(--error-low), var(--error-high))",
+                    }
+                  : { backgroundColor: `var(${path.colorToken}, ${path.fallbackColor})` }
+              }
             />
-            <span className="text-muted-foreground">{path.label}</span>
+            <span className="text-muted-foreground">
+              {path.label}
+              {path.errors && errorLegend ? `, ${errorLegend}` : ""}
+            </span>
           </span>
         ))}
       </div>

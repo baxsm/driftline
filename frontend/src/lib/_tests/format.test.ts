@@ -2,12 +2,68 @@ import { describe, expect, it } from "vitest";
 import {
   formatCount,
   formatDate,
+  formatDegrees,
   formatDuration,
+  formatMetres,
   formatRate,
+  formatScale,
+  formatToleranceMs,
   progressPercent,
   SOURCE_LABELS,
   shortHash,
 } from "@/lib/format";
+
+describe("formatScale", () => {
+  /**
+   * The scale is the factor the estimate was multiplied by to sit on truth, so a factor
+   * below 1 means it had to shrink and its distances were too large. Stating it the wrong
+   * way round is invisible in the UI and inverts the meaning, so the direction is pinned
+   * here. Verified against the scorer: an estimate ten times too large returns 0.1.
+   */
+  it("calls an estimate that had to shrink too large", () => {
+    expect(formatScale(0.1)).toBe("10.00x too large");
+    expect(formatScale(0.4)).toBe("2.50x too large");
+  });
+
+  it("calls an estimate that had to grow too small", () => {
+    expect(formatScale(10)).toBe("10.00x too small");
+  });
+
+  it("says a scale of one matches", () => {
+    expect(formatScale(1)).toBe("matches ground truth");
+    expect(formatScale(1.001)).toBe("matches ground truth");
+  });
+
+  it("refuses a scale that cannot be a ratio", () => {
+    expect(formatScale(0)).toBe("unknown");
+    expect(formatScale(Number.NaN)).toBe("unknown");
+  });
+});
+
+describe("formatMetres", () => {
+  it("uses a unit that suits the size of the error", () => {
+    expect(formatMetres(0.004)).toBe("4.0 mm");
+    expect(formatMetres(0.042)).toBe("4.2 cm");
+    expect(formatMetres(3.5)).toBe("3.500 m");
+  });
+
+  it("reports a non finite value as unknown rather than NaN", () => {
+    expect(formatMetres(Number.NaN)).toBe("unknown");
+  });
+});
+
+describe("formatDegrees", () => {
+  it("keeps more precision on a small angle", () => {
+    expect(formatDegrees(2.456)).toBe("2.46°");
+    expect(formatDegrees(24.56)).toBe("24.6°");
+  });
+});
+
+describe("formatToleranceMs", () => {
+  it("reads a nanosecond tolerance as milliseconds", () => {
+    expect(formatToleranceMs("20000000")).toBe("20 ms");
+  });
+});
 
 describe("progressPercent", () => {
   it("reports how far through a run is", () => {

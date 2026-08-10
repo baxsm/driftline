@@ -1,18 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { type FC, useCallback, useEffect, useState } from "react";
+import { type FC, useCallback, useEffect, useMemo, useState } from "react";
 import AppTopbar from "@/components/app-topbar";
+import ErrorInspector from "@/components/runs/error-inspector";
+import MetricsPanel from "@/components/runs/metrics-panel";
 import RunStatusBadge from "@/components/runs/run-status-badge";
 import TrackingView from "@/components/runs/tracking-view";
 import { ErrorState, LoadingRows } from "@/components/states";
 import { Skeleton } from "@/components/ui/skeleton";
-import TrajectoryViewer from "@/components/viewer/trajectory-viewer";
+import TrajectoryViewer, { type TrajectoryPath } from "@/components/viewer/trajectory-viewer";
 import { API_BASE, ApiError, api } from "@/lib/api";
-import { formatCount, progressPercent, shortHash } from "@/lib/format";
-import type { Run, RunProgress, TrajectoryResponse } from "@/lib/types";
+import { formatCount, formatMetres, progressPercent, shortHash } from "@/lib/format";
+import type {
+  GroundTruthResponse,
+  MetricsResponse,
+  PoseErrorsResponse,
+  Run,
+  RunProgress,
+  TrajectoryResponse,
+} from "@/lib/types";
 
 const ESTIMATE_FALLBACK = "#8b7fe8";
+const TRUTH_FALLBACK = "#b9bec7";
+// truth runs at six times the frame rate, so the drawn line is continuous well before every
+// pose is sent
+const TRUTH_STRIDE = 4;
 
 const Stat: FC<{ label: string; value: string; hint?: string }> = ({ label, value, hint }) => (
   <div className="flex flex-col gap-0.5">
@@ -25,18 +38,70 @@ const Stat: FC<{ label: string; value: string; hint?: string }> = ({ label, valu
 const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
   const [run, setRun] = useState<Run | null>(null);
   const [trajectory, setTrajectory] = useState<TrajectoryResponse | null>(null);
+  const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
+  const [errors, setErrors] = useState<PoseErrorsResponse | null>(null);
+  const [truth, setTruth] = useState<GroundTruthResponse | null>(null);
+  const [selectedPose, setSelectedPose] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [streaming, setStreaming] = useState(false);
 
-  const loadTrajectory = useCallback(async () => {
+  /**
+   * Load the scores first, because they decide what the viewer should draw.
+   *
+   * A scored run gets the aligned estimate overlaid on truth, which is the only overlay that
+   * means anything: unaligned, the two sit in different frames at different scales. An
+   * unscored run gets the raw estimate on its own, and says so.
+   */
+  const loadResults = useCallback(async () => {
+    let scored: MetricsResponse | null = null;
     try {
-      const loaded = await api.get<TrajectoryResponse>(`/api/runs/${runId}/trajectory`);
+      scored = await api.get<MetricsResponse>(`/api/runs/${runId}/metrics`);
+      setMetrics(scored);
+    } catch {
+      setMetrics(null);
+    }
+
+    const aligned = Boolean(scored?.metrics);
+    try {
+      const loaded = await api.get<TrajectoryResponse>(
+        `/api/runs/${runId}/trajectory${aligned ? "?aligned=true" : ""}`,
+      );
       setTrajectory(loaded);
     } catch {
       setTrajectory(null);
     }
+
+    if (!aligned) {
+      setErrors(null);
+      setTruth(null);
+      return;
+    }
+
+    try {
+      setErrors(await api.get<PoseErrorsResponse>(`/api/runs/${runId}/errors`));
+    } catch {
+      setErrors(null);
+    }
   }, [runId]);
+
+  /**
+   * Ground truth for the overlay, decimated.
+   *
+   * A room sequence carries over 16000 truth poses against a couple of thousand estimated
+   * ones. Drawing every one costs a lot of geometry to render a line that is already
+   * visually continuous at a fraction of the density.
+   */
+  const loadTruth = useCallback(async (datasetId: string) => {
+    try {
+      const loaded = await api.get<GroundTruthResponse>(
+        `/api/datasets/${datasetId}/ground-truth?stride=${TRUTH_STRIDE}`,
+      );
+      setTruth(loaded.has_ground_truth && loaded.poses.length > 0 ? loaded : null);
+    } catch {
+      setTruth(null);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setError(null);
@@ -44,8 +109,9 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
       const found = await api.get<Run>(`/api/runs/${runId}`);
       setRun(found);
       setLoading(false);
+      void loadTruth(found.dataset_id);
       if (found.status === "done" || found.status === "failed") {
-        await loadTrajectory();
+        await loadResults();
       } else {
         setStreaming(true);
       }
@@ -54,15 +120,61 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
       setError(caught instanceof ApiError ? caught.message : "Could not load this run.");
       setLoading(false);
     }
-  }, [runId, loadTrajectory]);
+  }, [runId, loadResults, loadTruth]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  const poseErrors = errors?.errors ?? [];
+
+  /**
+   * The paths the viewer draws.
+   *
+   * Truth is only overlaid once the estimate has been aligned onto it. Drawing both before
+   * that would put two trajectories in different frames at different scales in the same
+   * space, which invites reading the gap between them as error when it is mostly the
+   * arbitrary frame the estimator started in.
+   *
+   * The error colours line up with the estimate pose for pose only when both came from the
+   * same scored run, so they are attached only when the counts agree.
+   */
+  const viewerPaths = useMemo(() => {
+    const poses = trajectory?.poses ?? [];
+    const aligned = Boolean(trajectory?.aligned);
+    const values = poseErrors.map((point) => point.trans_error);
+
+    const paths: TrajectoryPath[] = [
+      {
+        poses,
+        colorToken: "--estimate-path",
+        fallbackColor: ESTIMATE_FALLBACK,
+        label: "Estimate",
+        errors: aligned && values.length === poses.length ? values : undefined,
+      },
+    ];
+
+    if (aligned && truth?.poses.length) {
+      paths.unshift({
+        poses: truth.poses,
+        colorToken: "--truth-path",
+        fallbackColor: TRUTH_FALLBACK,
+        label: "Ground truth",
+        errors: undefined,
+      });
+    }
+    return paths;
+  }, [trajectory, truth, poseErrors]);
+
+  const errorLegend = useMemo(() => {
+    if (poseErrors.length === 0) return undefined;
+    const worst = Math.max(...poseErrors.map((point) => point.trans_error));
+    return `0 to ${formatMetres(worst)} off`;
+  }, [poseErrors]);
+
   /**
    * Progress arrives over SSE rather than polling. The stream closes itself when the run
-   * reaches a terminal status, and the trajectory is fetched once at that point.
+   * reaches a terminal status, and the scores and trajectory are fetched once at that point.
    *
    * This opens once per run id. The handler reads nothing from state, so it cannot capture a
    * stale run, and the effect does not re-run on every progress event.
@@ -92,13 +204,13 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
       if (progress.status === "done" || progress.status === "failed") {
         source.close();
         setStreaming(false);
-        void loadTrajectory();
+        void loadResults();
       }
     };
 
     source.onerror = () => source.close();
     return () => source.close();
-  }, [runId, streaming, loadTrajectory]);
+  }, [runId, streaming, loadResults]);
 
   if (loading) {
     return (
@@ -205,6 +317,13 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
             </div>
           </section>
 
+          {!inFlight ? (
+            <section className="flex flex-col gap-3">
+              <h2 className="font-medium text-sm">Accuracy</h2>
+              <MetricsPanel metrics={metrics} status={status} />
+            </section>
+          ) : null}
+
           {/* the reserved height is for a drawn path; an empty state sizes to its own text */}
           <section
             className={`flex flex-col gap-2 ${
@@ -212,25 +331,24 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
             }`}
           >
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-medium text-sm">Estimated path</h2>
-              {trajectory?.scale_is_arbitrary ? (
-                <span className="text-muted-foreground text-xs">
-                  Monocular, so distances have no absolute scale
-                </span>
-              ) : null}
+              <h2 className="font-medium text-sm">
+                {trajectory?.aligned ? "Estimate against ground truth" : "Estimated path"}
+              </h2>
+              <span className="text-muted-foreground text-xs">
+                {trajectory?.aligned
+                  ? "Aligned onto ground truth, so distances are in metres"
+                  : trajectory?.scale_is_arbitrary
+                    ? "Monocular, so distances have no absolute scale"
+                    : null}
+              </span>
             </div>
             {inFlight ? (
               <Skeleton className="min-h-[320px] flex-1 rounded-lg" />
             ) : (
               <TrajectoryViewer
-                paths={[
-                  {
-                    poses: trajectory?.poses ?? [],
-                    colorToken: "--estimate-path",
-                    fallbackColor: ESTIMATE_FALLBACK,
-                    label: "Estimate",
-                  },
-                ]}
+                paths={viewerPaths}
+                markerIndex={selectedPose}
+                errorLegend={errorLegend}
                 emptyMessage={
                   status === "failed"
                     ? "This run failed before it estimated any poses."
@@ -239,6 +357,17 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
               />
             )}
           </section>
+
+          {poseErrors.length > 0 ? (
+            <section className="flex flex-col gap-3">
+              <h2 className="font-medium text-sm">Error over the run</h2>
+              <ErrorInspector
+                errors={poseErrors}
+                selected={selectedPose}
+                onSelect={setSelectedPose}
+              />
+            </section>
+          ) : null}
 
           {!inFlight && processed_frames > 0 ? (
             <section className="flex flex-col gap-2">

@@ -6,57 +6,10 @@ rendered from a known camera path, so a run that completes proves the whole chai
 route through the pipeline to the artifacts on disk.
 """
 
-from pathlib import Path
-
-import cv2
-import pytest
-import yaml
-
 from api.services import worker
-from estimator._tests.synthetic import straight_line_sequence
 
-# matches the intrinsics the synthetic renderer projects with, so a recovered path can be
-# compared against the path that generated it
-CAMCHAIN = {
-    "cam0": {
-        "camera_model": "pinhole",
-        "intrinsics": [400.0, 400.0, 320.0, 240.0],
-        "distortion_model": "none",
-        "distortion_coeffs": [0.0, 0.0, 0.0, 0.0],
-        "resolution": [640, 480],
-    }
-}
-
-
-@pytest.fixture
-def sequence_on_disk(tmp_path: Path) -> Path:
-    """Write a synthetic sequence in the ASL layout the reader expects."""
-    rendered = straight_line_sequence(frames=10)
-    data_dir = tmp_path / "mav0" / "cam0" / "data"
-    data_dir.mkdir(parents=True)
-
-    rows = ["#timestamp [ns],filename"]
-    for index, image in enumerate(rendered.images):
-        timestamp = 1520530308199447626 + index * 50_000_000
-        cv2.imwrite(str(data_dir / f"{timestamp}.png"), image)
-        rows.append(f"{timestamp},{timestamp}.png")
-    (tmp_path / "mav0" / "cam0" / "data.csv").write_text("\n".join(rows), encoding="utf-8")
-
-    imu_dir = tmp_path / "mav0" / "imu0"
-    imu_dir.mkdir(parents=True)
-    (imu_dir / "data.csv").write_text(
-        "#timestamp,wx,wy,wz,ax,ay,az\n1520530308199447626,0,0,0,0,0,9.81\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "camchain.yaml").write_text(yaml.safe_dump(CAMCHAIN), encoding="utf-8")
-    return tmp_path
-
-
-@pytest.fixture
-def registered_dataset(client, signed_in, sequence_on_disk) -> str:
-    response = client.post("/api/datasets/register", json={"path": str(sequence_on_disk)})
-    assert response.status_code == 201, response.text
-    return response.json()["id"]
+# `sequence_on_disk`, `registered_dataset`, `scorable_sequence` and `scorable_dataset` come
+# from conftest.py, so the metrics route tests can use the same ones without importing them
 
 
 def test_queue_returns_immediately_with_a_queued_run(client, registered_dataset):

@@ -96,6 +96,9 @@ class Run(Base):
     poses: Mapped[list["Pose"]] = relationship(
         back_populates="run", cascade="all, delete-orphan", passive_deletes=True
     )
+    metrics: Mapped["RunMetrics | None"] = relationship(
+        back_populates="run", cascade="all, delete-orphan", passive_deletes=True
+    )
 
     __table_args__ = (Index("ix_runs_dataset_created", "dataset_id", created_at.desc()),)
 
@@ -123,6 +126,63 @@ class Pose(Base):
     run: Mapped[Run] = relationship(back_populates="poses")
 
     __table_args__ = (Index("ix_poses_run_ts", "run_id", "timestamp_ns"),)
+
+
+class RunMetrics(Base):
+    """Scores for one run against its dataset's ground truth. One row per run.
+
+    A run with no ground truth has no row at all, rather than a row of nulls or zeros. The
+    absence is the honest answer: zero error and unmeasured error are different claims and
+    a zero would read as the estimator being perfect.
+
+    `alignment` is not decoration. An ATE without it cannot be compared to anything, and
+    Sim(3) on a run that observes scale hides scale drift completely, so it is stored beside
+    every number it produced.
+    """
+
+    __tablename__ = "run_metrics"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    ate_rmse: Mapped[float] = mapped_column(Float, nullable=False)
+    ate_mean: Mapped[float] = mapped_column(Float, nullable=False)
+    ate_median: Mapped[float] = mapped_column(Float, nullable=False)
+    ate_max: Mapped[float] = mapped_column(Float, nullable=False)
+    ate_rot_rmse: Mapped[float] = mapped_column(Float, nullable=False)
+    ate_rot_std: Mapped[float] = mapped_column(Float, nullable=False)
+    # null when the run was too short to furnish a single segment at this delta
+    rpe_trans_rmse: Mapped[float | None] = mapped_column(Float)
+    rpe_rot_rmse: Mapped[float | None] = mapped_column(Float)
+    rpe_delta_frames: Mapped[int] = mapped_column(Integer, nullable=False)
+    # the Sim(3) factor, null for se3 where scale was never solved for
+    scale_error: Mapped[float | None] = mapped_column(Float)
+    alignment: Mapped[str] = mapped_column(String(8), nullable=False)
+    aligned_pose_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: estimated poses offered for matching, so the UI can say "N of M matched"
+    candidate_pose_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    association_tolerance_ns: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    run: Mapped[Run] = relationship(back_populates="metrics")
+
+
+class PoseError(Base):
+    """Per pose error after alignment, for the error plot and the path colouring."""
+
+    __tablename__ = "pose_errors"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
+    )
+    timestamp_ns: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    trans_error: Mapped[float] = mapped_column(Float, nullable=False)
+    rot_error: Mapped[float] = mapped_column(Float, nullable=False)
+
+    __table_args__ = (Index("ix_pose_errors_run_ts", "run_id", "timestamp_ns"),)
 
 
 class GroundTruthPose(Base):

@@ -81,19 +81,29 @@ def read_tracks(artifacts: RunArtifacts, first_frame: int, last_frame: int) -> p
     return selected.sort_values(["frame_index", "track_id"])
 
 
-def write_trajectory(artifacts: RunArtifacts, frames: list[FrameResult]) -> None:
-    """Write TUM format: timestamp in seconds, then position, then a (x, y, z, w) quaternion.
+def tum_line(
+    timestamp_ns: int,
+    position: tuple[float, float, float],
+    quaternion: tuple[float, float, float, float],
+) -> str:
+    """One TUM row: timestamp in seconds, position, then an (x, y, z, w) quaternion.
 
-    TUM puts the scalar part last while the rest of this project uses Hamilton (w, x, y, z),
-    so the order is swapped here rather than anywhere the ordering could be missed.
+    TUM puts the scalar part last while the rest of this project uses Hamilton (w, x, y, z).
+    The swap lives here alone, so the file written during a run and the file served by the
+    export route cannot disagree about the ordering.
     """
+    w, x, y, z = quaternion
+    tx, ty, tz = position
+    return f"{timestamp_ns / 1e9:.9f} {tx:.9f} {ty:.9f} {tz:.9f} {x:.9f} {y:.9f} {z:.9f} {w:.9f}\n"
+
+
+def write_trajectory(artifacts: RunArtifacts, frames: list[FrameResult]) -> None:
     lines = [TUM_HEADER]
     for frame in frames:
         w, x, y, z = frame.pose.quaternion()
         tx, ty, tz = frame.pose.translation
-        seconds = frame.timestamp_ns / 1e9
         lines.append(
-            f"{seconds:.9f} {tx:.9f} {ty:.9f} {tz:.9f} {x:.9f} {y:.9f} {z:.9f} {w:.9f}\n"
+            tum_line(frame.timestamp_ns, (float(tx), float(ty), float(tz)), (w, x, y, z))
         )
     artifacts.trajectory_path.write_text("".join(lines), encoding="utf-8")
 

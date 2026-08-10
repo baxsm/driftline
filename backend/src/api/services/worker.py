@@ -21,6 +21,7 @@ from datasets.errors import SequenceUnreadable
 from db.models import Dataset, Run
 from db.session import session_scope
 from estimator.artifacts import (
+    RunArtifacts,
     append_log,
     artifacts_for,
     prepare,
@@ -32,6 +33,7 @@ from estimator.config import EstimatorConfig
 from estimator.images import open_frames
 from estimator.pipeline import FrameResult, run_pipeline
 
+from . import metrics as metrics_service
 from . import runs as service
 
 POLL_SECONDS = 1.0
@@ -130,6 +132,10 @@ def execute_run(session: Session, run: Run) -> None:
 
     append_log(artifacts, f"estimated {len(outcome.frames)} poses in {elapsed:.1f}s")
 
+    # a run that lost tracking still estimated a real trajectory up to that point, so it is
+    # scored too rather than being left without any measure of how far it had drifted
+    _score(session, run, artifacts)
+
     if outcome.failed:
         append_log(
             artifacts,
@@ -139,6 +145,33 @@ def execute_run(session: Session, run: Run) -> None:
 
     append_log(artifacts, "done")
     service.finish_run(session, run.id, "done")
+
+
+def _score(session: Session, run: Run, artifacts: RunArtifacts) -> None:
+    """Score the run against ground truth, logging whatever the outcome was.
+
+    Scoring never fails the run. The estimate is what the run produced, and it is still
+    worth keeping and drawing when the comparison against truth cannot be made.
+    """
+    try:
+        result = metrics_service.score_run(session, run)
+    except Exception as exc:
+        logger.error("worker.scoring_failed", exc)
+        session.rollback()
+        append_log(artifacts, "scoring failed, the estimate is kept")
+        return
+
+    if not result:
+        append_log(artifacts, "not scored: this sequence has no usable ground truth")
+        return
+
+    append_log(
+        artifacts,
+        f"scored against ground truth, {result.alignment.mode} aligned: "
+        f"ate rmse {result.ate_translation.rmse:.4f}, "
+        f"{result.association.matched_count} of {result.association.candidate_count} "
+        f"poses matched",
+    )
 
 
 def process_one(session: Session) -> bool:

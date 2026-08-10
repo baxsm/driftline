@@ -9,6 +9,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
+import numpy as np
 from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -24,7 +25,14 @@ from estimator.images import open_frames
 
 from ..dependencies import current_user
 from ..errors import ApiError
-from ..serializers import pose_response, run_response, run_summary
+from ..serializers import (
+    metrics_response,
+    pose_error_response,
+    pose_response,
+    run_response,
+    run_summary,
+)
+from ..services import metrics as metrics_service
 from ..services import runs as service
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
@@ -91,18 +99,87 @@ def delete_run(
 def get_trajectory(
     run_id: str,
     stride: int = Query(default=1, ge=1, le=1000),
+    aligned: bool = Query(default=False),
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
+    """The estimated trajectory, optionally mapped into the ground truth frame.
+
+    Unaligned, the estimate sits in whatever frame and scale the estimator chose, so drawing
+    it over truth compares two things in different coordinate systems. `aligned=true`
+    applies the transform the score was computed with, which is the only way the overlay
+    means anything. It is a request time transform of stored poses rather than a second
+    stored copy, so the drawn path can never disagree with the stored metrics.
+    """
     run = service.get_run(session, user.id, run_id)
     poses, total = service.trajectory(session, run.id, stride)
-    return {
+    body: dict[str, Any] = {
         "poses": [pose_response(pose) for pose in poses],
         "stride": stride,
         "total": total,
         # mono translation has no absolute scale, so the viewer must not present these as
-        # metres and phase 3 must align with Sim(3) rather than SE(3)
+        # metres unless they have been aligned onto truth
         "scale_is_arbitrary": run.config.get("mode", "mono") == "mono",
+        "aligned": False,
+    }
+    if not aligned:
+        return body
+
+    alignment = metrics_service.stored_alignment(session, run)
+    if not alignment:
+        return body
+
+    body["poses"] = [
+        pose_response(pose, position=position)
+        for pose, position in zip(
+            poses, alignment.apply_positions(_positions(poses)), strict=True
+        )
+    ]
+    body["aligned"] = True
+    body["alignment"] = alignment.mode
+    body["scale_is_arbitrary"] = False
+    return body
+
+
+def _positions(poses: list[Any]) -> Any:
+    return np.array([[pose.tx, pose.ty, pose.tz] for pose in poses], dtype=np.float64)
+
+
+@router.get("/{run_id}/metrics")
+def get_metrics(
+    run_id: str,
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Scores for a run, or an explicit statement that there are none.
+
+    `metrics: null` with a reason is the honest shape. Returning zeros for an unscored run
+    would render as a perfect estimate, which is the opposite of what happened.
+    """
+    run = service.get_run(session, user.id, run_id)
+    dataset = session.get(Dataset, run.dataset_id)
+    metrics = metrics_service.get_metrics(session, run.id)
+
+    return {
+        "metrics": metrics_response(metrics) if metrics else None,
+        "has_ground_truth": bool(dataset and dataset.has_ground_truth),
+        "status": run.status,
+    }
+
+
+@router.get("/{run_id}/errors")
+def get_pose_errors(
+    run_id: str,
+    stride: int = Query(default=1, ge=1, le=1000),
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    run = service.get_run(session, user.id, run_id)
+    errors, total = metrics_service.pose_errors(session, run.id, stride)
+    return {
+        "errors": [pose_error_response(error) for error in errors],
+        "stride": stride,
+        "total": total,
     }
 
 
@@ -180,6 +257,41 @@ def get_frame_image(
         content=path.read_bytes(),
         media_type="application/octet-stream",
         headers={"Cache-Control": "private, max-age=3600"},
+    )
+
+
+@router.get("/{run_id}/export")
+def export_run(
+    run_id: str,
+    kind: str = Query(default="estimate", pattern="^(estimate|truth)$"),
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> Response:
+    """The estimate or the ground truth as a TUM file.
+
+    Exporting both is what makes the reported numbers checkable by someone else: the two
+    files are exactly what `evo_ape` and `evo_rpe` take, so any figure shown in the UI can
+    be re-derived outside this project. A metric that cannot be independently reproduced is
+    not evidence of anything.
+
+    Sent as `application/octet-stream` with no content disposition, so a download manager
+    extension cannot intercept it and hand back an empty body.
+    """
+    run = service.get_run(session, user.id, run_id)
+
+    if kind == "truth":
+        trajectory = metrics_service.truth_trajectory(session, run.dataset_id)
+        if len(trajectory.timestamps_ns) == 0:
+            raise ApiError("no_ground_truth", "This sequence has no ground truth to export.")
+    else:
+        trajectory = metrics_service.estimate_trajectory(session, run.id)
+        if len(trajectory.timestamps_ns) == 0:
+            raise ApiError("no_poses", "This run has no estimated poses to export.")
+
+    return Response(
+        content=metrics_service.tum_document(trajectory),
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "private, max-age=60"},
     )
 
 

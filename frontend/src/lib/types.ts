@@ -123,6 +123,54 @@ export interface TrajectoryResponse {
   total: number;
   /** Monocular translation has no absolute scale, so the viewer must not label it in metres. */
   scale_is_arbitrary: boolean;
+  /** Whether these poses were mapped onto the ground truth frame. */
+  aligned: boolean;
+  alignment?: AlignmentMode;
+}
+
+/**
+ * How the estimate was fitted onto truth before measuring. Never hidden from the reader: an
+ * ATE without it is not comparable, and Sim(3) on a run that observes scale hides scale
+ * drift completely.
+ */
+export type AlignmentMode = "se3" | "sim3";
+
+export interface RunMetrics {
+  ate_rmse: number;
+  ate_mean: number;
+  ate_median: number;
+  ate_max: number;
+  ate_rot_rmse: number;
+  ate_rot_std: number;
+  rpe_trans_rmse: number | null;
+  rpe_rot_rmse: number | null;
+  rpe_delta_frames: number;
+  /** The Sim(3) factor, null for SE(3) where scale was never solved for. */
+  scale_error: number | null;
+  alignment: AlignmentMode;
+  aligned_pose_count: number;
+  candidate_pose_count: number;
+  association_tolerance_ns: string;
+  computed_at: string;
+}
+
+export interface MetricsResponse {
+  /** Null when the run was not scored. Never zeros, which would read as a perfect estimate. */
+  metrics: RunMetrics | null;
+  has_ground_truth: boolean;
+  status: RunStatus;
+}
+
+export interface PoseErrorPoint {
+  timestamp_ns: string;
+  trans_error: number;
+  rot_error: number;
+}
+
+export interface PoseErrorsResponse {
+  errors: PoseErrorPoint[];
+  stride: number;
+  total: number;
 }
 
 export interface TrackedFeature {

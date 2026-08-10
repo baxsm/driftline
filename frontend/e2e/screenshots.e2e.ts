@@ -2,6 +2,7 @@
 import {
   EMPTY_DIR,
   RUN_SEQUENCE_PATH,
+  SCORABLE_SEQUENCE_PATH,
   SEQUENCE_PATH,
   hideDevIndicator,
   registerAndSignIn,
@@ -86,6 +87,35 @@ test("capture every meaningful state", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.waitForTimeout(SETTLE_MS);
     await page.screenshot({ path: `${DIR}/19-run-detail-375.png`, fullPage: true });
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
+
+  // a scored run: the metrics panel, the truth overlay and the error plots only exist when
+  // the sequence carries ground truth, so they need their own sequence to capture
+  if (SCORABLE_SEQUENCE_PATH) {
+    await registerSequence(page, SCORABLE_SEQUENCE_PATH, "shot scorable");
+    await page.getByRole("button", { name: "New run" }).click();
+    await page.getByLabel("Label").fill("shot scored");
+    await page.getByRole("button", { name: "Queue run" }).click();
+    await page
+      .getByRole("listitem")
+      .filter({ hasText: "shot scored" })
+      .getByText("Done")
+      .waitFor({ timeout: 60_000 });
+
+    await page.getByRole("link", { name: "shot scored" }).click();
+    await page.waitForURL(/\/app\/runs\/[0-9a-f-]+$/);
+    await page.waitForTimeout(2000);
+    await page.screenshot({ path: `${DIR}/20-run-scored.png`, fullPage: true });
+
+    // the selection is shared by the plots, the slider and the 3D marker
+    await page.getByRole("button", { name: "Jump to worst pose" }).click();
+    await page.waitForTimeout(SETTLE_MS);
+    await page.screenshot({ path: `${DIR}/21-run-scored-worst.png`, fullPage: true });
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.waitForTimeout(1000);
+    await page.screenshot({ path: `${DIR}/22-run-scored-375.png`, fullPage: true });
     await page.setViewportSize({ width: 1440, height: 900 });
   }
 
