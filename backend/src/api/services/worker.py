@@ -100,9 +100,21 @@ def execute_run(session: Session, run: Run) -> None:
     except CalibrationMissing as exc:
         raise RunFailed(str(exc)) from exc
 
-    total = len(frames) if config.max_frames is None else min(len(frames), config.max_frames)
-    timestamps = frames.timestamps[:total]
-    append_log(artifacts, f"{total} frames, camera model {camera.distortion_model}")
+    start = config.start_frame
+    if start >= len(frames):
+        raise RunFailed(
+            f"this sequence has {len(frames)} frames, so it cannot start at frame {start}"
+        )
+
+    available = len(frames) - start
+    total = available if config.max_frames is None else min(available, config.max_frames)
+    timestamps = frames.timestamps[start : start + total]
+
+    def load_frame(index: int) -> Any:
+        return frames.load(start + index)
+
+    where = f" from frame {start}" if start else ""
+    append_log(artifacts, f"{total} frames{where}, camera model {camera.distortion_model}")
 
     processed = 0
 
@@ -116,7 +128,7 @@ def execute_run(session: Session, run: Run) -> None:
     try:
         outcome = run_pipeline(
             timestamps=timestamps,
-            load_image=frames.load,
+            load_image=load_frame,
             camera=camera,
             config=config,
             on_frame=on_frame,
@@ -154,7 +166,7 @@ def _score(session: Session, run: Run, artifacts: RunArtifacts) -> None:
     worth keeping and drawing when the comparison against truth cannot be made.
     """
     try:
-        result = metrics_service.score_run(session, run)
+        result, reason = metrics_service.score_run_with_reason(session, run)
     except Exception as exc:
         logger.error("worker.scoring_failed", exc)
         session.rollback()
@@ -162,7 +174,7 @@ def _score(session: Session, run: Run, artifacts: RunArtifacts) -> None:
         return
 
     if not result:
-        append_log(artifacts, "not scored: this sequence has no usable ground truth")
+        append_log(artifacts, f"not scored: {reason}")
         return
 
     append_log(

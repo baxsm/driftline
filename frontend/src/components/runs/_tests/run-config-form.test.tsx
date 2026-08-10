@@ -12,7 +12,7 @@ async function openForm(onQueue = vi.fn().mockResolvedValue(undefined)) {
 describe("RunConfigForm", () => {
   it("opens with the server's defaults", async () => {
     await openForm();
-    expect(screen.getByLabelText("Max features")).toHaveValue(300);
+    expect(screen.getByLabelText("Max features")).toHaveValue(600);
     expect(screen.getByLabelText("RANSAC threshold")).toHaveValue(1);
   });
 
@@ -31,7 +31,7 @@ describe("RunConfigForm", () => {
     const { onQueue } = await openForm();
     await userEvent.click(screen.getByRole("button", { name: "Queue run" }));
     expect(onQueue).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: "mono", max_features: 300, max_frames: null }),
+      expect.objectContaining({ mode: "mono", max_features: 600, max_frames: null }),
       "",
     );
   });
@@ -83,8 +83,38 @@ describe("RunConfigForm", () => {
     // with the phases that use them
     await openForm();
     expect(screen.queryByLabelText(/imu/i)).toBeNull();
-    expect(screen.queryByLabelText(/window/i)).toBeNull();
-    expect(screen.queryByLabelText(/keyframe/i)).toBeNull();
+    expect(screen.queryByLabelText(/sliding window/i)).toBeNull();
+    expect(screen.queryByLabelText(/gravity/i)).toBeNull();
+  });
+
+  it("passes the keyframe and range settings through", async () => {
+    const { onQueue } = await openForm();
+    await userEvent.click(screen.getByRole("button", { name: "Queue run" }));
+    expect(onQueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        keyframe_parallax_px: 8,
+        enhance_contrast: true,
+        start_frame: 0,
+      }),
+      "",
+    );
+  });
+
+  it("rejects a start frame past the end of the sequence", async () => {
+    const { onQueue } = await openForm();
+    const field = screen.getByLabelText("Start frame");
+    await userEvent.clear(field);
+    await userEvent.type(field, "99999");
+    await userEvent.click(screen.getByRole("button", { name: "Queue run" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Start frame must be between");
+    expect(onQueue).not.toHaveBeenCalled();
+  });
+
+  it("turns contrast equalisation off when unchecked", async () => {
+    const { onQueue } = await openForm();
+    await userEvent.click(screen.getByLabelText(/equalise contrast/i));
+    await userEvent.click(screen.getByRole("button", { name: "Queue run" }));
+    expect(onQueue).toHaveBeenCalledWith(expect.objectContaining({ enhance_contrast: false }), "");
   });
 
   it("keeps the button disabled while a queue is in flight", async () => {

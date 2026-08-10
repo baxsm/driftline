@@ -312,7 +312,11 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
             <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
               <Stat label="Mode" value={config.mode} hint="visual only" />
               <Stat label="Max features" value={formatCount(config.max_features)} />
-              <Stat label="RANSAC threshold" value={`${config.ransac_threshold_px} px`} />
+              <Stat
+                label="Keyframe parallax"
+                value={`${config.keyframe_parallax_px} px`}
+                hint="motion needed to solve"
+              />
               <Stat label="Poses" value={formatCount(trajectory?.total ?? processed_frames)} />
             </div>
           </section>

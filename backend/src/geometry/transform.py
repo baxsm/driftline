@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.spatial.transform import Rotation, Slerp
 
 from .quaternion import canonical, from_matrix, to_matrix
 
@@ -56,6 +57,23 @@ def compose(outer: Transform, inner: Transform) -> Transform:
 def invert(transform: Transform) -> Transform:
     inverse_rotation = transform.rotation.T
     return Transform(inverse_rotation, -inverse_rotation @ transform.translation)
+
+
+def interpolate(start: Transform, end: Transform, fraction: float) -> Transform:
+    """A pose a fraction of the way from start to end.
+
+    Rotation is slerped rather than interpolated component wise, because averaging two
+    rotation matrices does not produce a rotation matrix. Used to fill in the frames between
+    two keyframes: monocular geometry only solves at keyframes, and holding the previous pose
+    across the gap would report the camera as stationary and then jumping.
+    """
+    ratio = float(np.clip(fraction, 0.0, 1.0))
+    rotations = Rotation.from_matrix(np.stack([start.rotation, end.rotation]))
+    slerped = Slerp([0.0, 1.0], rotations)([ratio])
+    return Transform(
+        np.asarray(slerped.as_matrix()[0], dtype=np.float64),
+        start.translation + (end.translation - start.translation) * ratio,
+    )
 
 
 def motion_from_relative_pose(rotation: Array, translation: Array) -> Transform:

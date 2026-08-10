@@ -218,3 +218,50 @@ def test_score_is_invariant_to_a_shared_rigid_transform(
     assert score(moved(estimate), moved(truth), "se3").ate_translation.rmse == pytest.approx(
         baseline, rel=1e-6
     )
+
+
+def test_body_frame_conversion_undoes_a_camera_extrinsic() -> None:
+    """The bug this exists to prevent: scoring a camera frame estimate against body truth.
+
+    TUM VI mounts the camera about 179 degrees from the IMU, so an estimate that is perfect
+    scores as almost completely wrong until `T_cam_imu` is applied. Here the truth is turned
+    into a camera frame trajectory and then turned back, and the score has to return to zero.
+    """
+    truth = wandering_trajectory(seed=31, count=80)
+
+    body_to_camera = np.eye(4)
+    body_to_camera[:3, :3] = np.asarray(
+        Rotation.from_euler("xyz", [2.39, 124.45, -128.80], degrees=True).as_matrix()
+    )
+    body_to_camera[:3, 3] = [0.047, -0.047, -0.068]
+
+    world_to_body = np.tile(np.eye(4), (len(truth.positions), 1, 1))
+    world_to_body[:, :3, :3] = truth.rotations
+    world_to_body[:, :3, 3] = truth.positions
+    world_to_camera = world_to_body @ np.linalg.inv(body_to_camera)
+
+    as_camera = Trajectory(
+        truth.timestamps_ns.copy(),
+        np.asarray(world_to_camera[:, :3, 3], dtype=np.float64),
+        np.asarray(
+            Rotation.from_matrix(world_to_camera[:, :3, :3]).as_quat(scalar_first=True),
+            dtype=np.float64,
+        ),
+    )
+
+    # scored raw, the fixed mount shows up as a large rotation error that is not the estimate's
+    assert score(as_camera, truth, "se3").ate_rotation_deg.rmse > 90.0
+
+    recovered = as_camera.to_body_frame(body_to_camera)
+    result = score(recovered, truth, "se3")
+    assert result.ate_translation.rmse == pytest.approx(0.0, abs=1e-9)
+    assert result.ate_rotation_deg.rmse == pytest.approx(0.0, abs=1e-7)
+
+
+def test_body_frame_conversion_is_identity_for_an_identity_extrinsic() -> None:
+    truth = wandering_trajectory(seed=32, count=40)
+
+    unchanged = truth.to_body_frame(np.eye(4))
+
+    assert np.allclose(unchanged.positions, truth.positions)
+    assert score(unchanged, truth, "se3").ate_translation.rmse == pytest.approx(0.0, abs=1e-9)

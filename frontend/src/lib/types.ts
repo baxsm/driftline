@@ -73,12 +73,16 @@ export type RunStatus = "queued" | "running" | "done" | "failed";
 export interface EstimatorConfig {
   mode: "mono";
   max_features: number;
-  fast_threshold: number;
+  corner_quality: number;
   min_feature_distance_px: number;
   ransac_threshold_px: number;
   redetect_below: number;
   min_track_length: number;
   max_frames: number | null;
+  start_frame: number;
+  enhance_contrast: boolean;
+  keyframe_parallax_px: number;
+  max_frames_without_keyframe: number;
 }
 
 export interface RunSummary {

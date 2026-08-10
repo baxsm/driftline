@@ -1,9 +1,16 @@
 import numpy as np
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from scipy.spatial.transform import Rotation
 
-from geometry.transform import Transform, compose, invert, motion_from_relative_pose
+from geometry.transform import (
+    Transform,
+    compose,
+    interpolate,
+    invert,
+    motion_from_relative_pose,
+)
 
 finite = st.floats(min_value=-5.0, max_value=5.0, allow_nan=False, allow_infinity=False)
 angles = st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False, allow_infinity=False)
@@ -64,3 +71,38 @@ def test_motion_from_relative_pose_inverts_opencv_convention():
     translation = np.array([-1.0, 0.0, 0.0])
     motion = motion_from_relative_pose(rotation, translation)
     assert np.allclose(motion.translation, np.array([1.0, 0.0, 0.0]))
+
+
+def test_interpolate_returns_the_endpoints() -> None:
+    start = Transform.identity()
+    end = Transform(
+        np.asarray(Rotation.from_euler("xyz", [0.3, -0.2, 0.5]).as_matrix()),
+        np.array([1.0, 2.0, -3.0]),
+    )
+
+    assert np.allclose(interpolate(start, end, 0.0).rotation, start.rotation)
+    assert np.allclose(interpolate(start, end, 1.0).translation, end.translation)
+
+
+def test_interpolate_halfway_is_half_the_rotation() -> None:
+    """Slerp, not component wise averaging: the midpoint has to still be a rotation."""
+    start = Transform.identity()
+    end = Transform(
+        np.asarray(Rotation.from_euler("z", 90.0, degrees=True).as_matrix()),
+        np.array([2.0, 0.0, 0.0]),
+    )
+
+    middle = interpolate(start, end, 0.5)
+    angle = np.degrees(np.linalg.norm(Rotation.from_matrix(middle.rotation).as_rotvec()))
+
+    assert angle == pytest.approx(45.0, abs=1e-9)
+    assert np.allclose(middle.translation, [1.0, 0.0, 0.0])
+    assert np.allclose(middle.rotation @ middle.rotation.T, np.eye(3), atol=1e-12)
+
+
+def test_interpolate_clamps_outside_the_segment() -> None:
+    start = Transform.identity()
+    end = Transform(np.eye(3), np.array([4.0, 0.0, 0.0]))
+
+    assert np.allclose(interpolate(start, end, -1.0).translation, start.translation)
+    assert np.allclose(interpolate(start, end, 2.0).translation, end.translation)

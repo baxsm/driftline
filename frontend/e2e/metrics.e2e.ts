@@ -3,8 +3,8 @@ import {
   queueRunAndWait,
   registerAndSignIn,
   registerSequence,
-  RUN_SEQUENCE_PATH,
   SCORABLE_SEQUENCE_PATH,
+  UNSCORABLE_SEQUENCE_PATH,
 } from "./helpers";
 
 /**
@@ -85,8 +85,11 @@ test.describe("metrics", () => {
   });
 
   test("says a sequence without ground truth cannot be scored", async ({ page }) => {
-    test.skip(!RUN_SEQUENCE_PATH, "set E2E_RUN_SEQUENCE_PATH");
-    await registerSequence(page, RUN_SEQUENCE_PATH, "e2e unscored");
+    test.skip(
+      !UNSCORABLE_SEQUENCE_PATH,
+      "set E2E_UNSCORABLE_SEQUENCE_PATH to a sequence with no ground truth",
+    );
+    await registerSequence(page, UNSCORABLE_SEQUENCE_PATH, "e2e unscored");
     await queueRunAndWait(page, "e2e unscored run");
     await page.getByRole("link", { name: "e2e unscored run" }).click();
     await page.waitForURL("**/app/runs/**");

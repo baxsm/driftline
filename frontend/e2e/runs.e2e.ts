@@ -42,8 +42,12 @@ test.describe("runs", () => {
 
     await expect(page.getByText("Estimated path")).toBeVisible();
     await expect(page.getByTestId("viewer-canvas")).toBeVisible();
-    // mono has no absolute scale and the page must say so rather than imply metres
-    await expect(page.getByText(/no absolute scale/)).toBeVisible();
+    // the viewer must say which frame the distances are in. A scorable sequence aligns onto
+    // truth and is in metres; without truth a mono estimate has no absolute scale. Either is
+    // honest, silently implying metres is not.
+    await expect(
+      page.getByText(/no absolute scale|Aligned onto ground truth/),
+    ).toBeVisible();
 
     const canvas = page.getByTestId("tracking-canvas");
     await canvas.scrollIntoViewIfNeeded();

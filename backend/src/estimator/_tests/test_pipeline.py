@@ -79,7 +79,11 @@ def test_recovers_a_turning_path():
 
 
 def test_blank_frames_fail_with_a_reason_and_a_frame_number():
-    """A run that cannot be solved must say why and where, not return a silent short path."""
+    """A run that cannot be solved must say why, not return a silent path of identities.
+
+    Blank frames have no corners, so no keyframe after the first can ever be solved. The run
+    has to end saying so rather than reporting a successful trajectory that never moved.
+    """
     blank = [np.full((480, 640), 30, dtype=np.uint8) for _ in range(6)]
     outcome = run_pipeline(
         timestamps=[i * 50_000_000 for i in range(len(blank))],
@@ -91,8 +95,54 @@ def test_blank_frames_fail_with_a_reason_and_a_frame_number():
     )
 
     assert outcome.failed
-    assert outcome.failure_frame == 1
-    assert "tracked features" in (outcome.failure_reason or "")
+    assert outcome.failure_frame is not None
+    assert "no motion could be solved" in (outcome.failure_reason or "")
+
+
+def test_a_still_camera_fails_rather_than_reporting_a_path():
+    """The degenerate case that broke every real run: a camera that is not translating.
+
+    The essential matrix cannot separate rotation from translation without parallax, so the
+    honest outcome is a failure naming the missing parallax, not a trajectory.
+    """
+    sequence = straight_line_sequence()
+    still = [sequence.images[0] for _ in range(40)]
+    outcome = run_pipeline(
+        timestamps=[i * 50_000_000 for i in range(len(still))],
+        load_image=lambda i: still[i],
+        camera=_pinhole(sequence.camera_matrix),
+        config=EstimatorConfig(max_frames_without_keyframe=20),
+    )
+
+    assert outcome.failed
+    assert "px" in (outcome.failure_reason or "")
+    assert "no keyframe" in (outcome.failure_reason or "")
+
+
+def test_frames_between_keyframes_are_interpolated_not_held():
+    """Non keyframe poses must move, otherwise the path stalls and then jumps.
+
+    A held pose reports the camera as stationary across the gap and then teleporting at the
+    next keyframe, which is not what happened and makes relative error meaningless.
+    """
+    sequence = straight_line_sequence(frames=24)
+    outcome = run_pipeline(
+        timestamps=[i * 50_000_000 for i in range(len(sequence.images))],
+        load_image=lambda i: sequence.images[i],
+        camera=_pinhole(sequence.camera_matrix),
+        config=EstimatorConfig(keyframe_parallax_px=20.0),
+    )
+
+    assert not outcome.failed, outcome.failure_reason
+    keyframes = [index for index, f in enumerate(outcome.frames) if f.is_keyframe]
+    assert len(keyframes) > 2, "the sequence should have produced several keyframes"
+
+    positions = np.array([f.pose.translation for f in outcome.frames])
+    steps = np.linalg.norm(np.diff(positions, axis=0), axis=1)
+    # up to the last keyframe every step moves. Frames after it are still waiting for a solve
+    # that never came, and holding those is the honest thing to do.
+    settled = steps[: keyframes[-1]]
+    assert np.count_nonzero(settled < 1e-12) == 0
 
 
 def test_max_frames_limits_the_run():
@@ -126,7 +176,7 @@ def test_config_rejects_unknown_keys(unknown: str):
 
 
 def test_config_hash_is_stable_and_order_independent():
-    a = EstimatorConfig(max_features=400, fast_threshold=25)
-    b = EstimatorConfig(fast_threshold=25, max_features=400)
+    a = EstimatorConfig(max_features=400, corner_quality=0.02)
+    b = EstimatorConfig(corner_quality=0.02, max_features=400)
     assert a.hash() == b.hash()
     assert EstimatorConfig(max_features=401).hash() != a.hash()

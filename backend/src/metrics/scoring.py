@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from geometry.quaternion import to_matrix
+from geometry.quaternion import from_matrix, to_matrix
 
 from .alignment import Alignment, AlignmentMode, align_for_mode
 from .association import Association, associate
@@ -62,6 +62,28 @@ class Trajectory:
             timestamps_ns=self.timestamps_ns[indices],
             positions=self.positions[indices],
             quaternions=self.quaternions[indices],
+        )
+
+    def to_body_frame(self, body_to_camera: Array) -> "Trajectory":
+        """Re-express camera poses as body poses, given kalibr's `T_cam_imu`.
+
+        The estimator works in the camera frame and the ground truth is recorded in the IMU
+        body frame. On TUM VI those frames are about 179 degrees apart, so scoring one
+        against the other without this transform reports that fixed offset as rotation error
+        and buries whatever the real error was.
+        """
+        if len(self.timestamps_ns) == 0:
+            return self
+
+        world_to_camera = np.tile(np.eye(4), (len(self.positions), 1, 1))
+        world_to_camera[:, :3, :3] = self.rotations
+        world_to_camera[:, :3, 3] = self.positions
+        world_to_body = world_to_camera @ np.asarray(body_to_camera, dtype=np.float64)
+
+        return Trajectory(
+            timestamps_ns=self.timestamps_ns,
+            positions=np.asarray(world_to_body[:, :3, 3], dtype=np.float64),
+            quaternions=np.stack([from_matrix(m) for m in world_to_body[:, :3, :3]]),
         )
 
 

@@ -65,12 +65,35 @@ export const CONFIG_GROUPS: Group[] = [
         step: 10,
       },
       {
-        key: "fast_threshold",
-        label: "Corner threshold",
-        hint: "1 to 100, higher keeps only stronger corners",
+        key: "corner_quality",
+        label: "Corner quality",
+        hint: "0.001 to 1, lower finds weaker corners in dark frames",
+        min: 0.001,
+        max: 1,
+        step: 0.001,
+      },
+    ],
+  },
+  {
+    title: "Keyframes",
+    description:
+      "Monocular geometry needs the camera to have actually moved. Frames are only solved once features have shifted this far.",
+    fields: [
+      {
+        key: "keyframe_parallax_px",
+        label: "Keyframe parallax",
+        hint: "pixels of median motion, 1 to 200",
         min: 1,
-        max: 100,
+        max: 200,
         step: 1,
+      },
+      {
+        key: "max_frames_without_keyframe",
+        label: "Give up after",
+        hint: "frames without enough motion, 2 to 2000",
+        min: 2,
+        max: 2000,
+        step: 10,
       },
     ],
   },
@@ -100,13 +123,17 @@ export const CONFIG_GROUPS: Group[] = [
 
 export const DEFAULT_CONFIG: EstimatorConfig = {
   mode: "mono",
-  max_features: 300,
-  fast_threshold: 20,
+  max_features: 600,
+  corner_quality: 0.01,
   min_feature_distance_px: 12,
   ransac_threshold_px: 1,
-  redetect_below: 120,
+  redetect_below: 300,
   min_track_length: 3,
   max_frames: null,
+  start_frame: 0,
+  enhance_contrast: true,
+  keyframe_parallax_px: 8,
+  max_frames_without_keyframe: 120,
 };
 
 interface RunConfigFormProps {
@@ -157,6 +184,13 @@ const RunConfigForm: FC<RunConfigFormProps> = ({ frameCount, onQueue }) => {
       return;
     }
 
+    const start = Number(config.start_frame);
+    if (!Number.isFinite(start) || start < 0 || start > Math.max(frameCount - 2, 0)) {
+      setError(`Start frame must be between 0 and ${Math.max(frameCount - 2, 0)}.`);
+      setFieldError("start_frame");
+      return;
+    }
+
     const trimmed = limitFrames.trim();
     const maxFrames = trimmed === "" ? null : Number(trimmed);
     if (maxFrames !== null && (!Number.isFinite(maxFrames) || maxFrames < 2)) {
@@ -196,8 +230,8 @@ const RunConfigForm: FC<RunConfigFormProps> = ({ frameCount, onQueue }) => {
           <DialogHeader>
             <DialogTitle>Queue a run</DialogTitle>
             <DialogDescription>
-              Monocular visual odometry over cam0. The estimate drifts and has no absolute scale;
-              that is what the next phases fix and measure.
+              Monocular visual odometry over cam0. The estimate drifts and has no absolute scale, so
+              it is scored against ground truth after a Sim(3) fit.
             </DialogDescription>
           </DialogHeader>
 
@@ -244,25 +278,78 @@ const RunConfigForm: FC<RunConfigFormProps> = ({ frameCount, onQueue }) => {
               </section>
             ))}
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="config-max_frames">Frame limit</Label>
-              <Input
-                id="config-max_frames"
-                type="number"
-                inputMode="numeric"
-                value={limitFrames}
-                min={2}
-                max={frameCount}
-                aria-invalid={fieldError === "max_frames"}
-                aria-describedby="hint-max_frames"
-                onChange={(event) => setLimitFrames(event.target.value)}
-                placeholder={`All ${frameCount.toLocaleString("en-US")} frames`}
-              />
-              <span id="hint-max_frames" className="text-muted-foreground text-xs">
-                Leave empty to run the whole sequence. A short limit is the quick way to see whether
-                a config tracks at all.
-              </span>
-            </div>
+            <section className="flex flex-col gap-3">
+              <div className="flex flex-col gap-0.5">
+                <h3 className="font-medium text-sm">Range</h3>
+                <p className="text-muted-foreground text-xs">
+                  Which part of the sequence to run over.
+                </p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="config-start_frame">Start frame</Label>
+                  <Input
+                    id="config-start_frame"
+                    type="number"
+                    inputMode="numeric"
+                    value={String(config.start_frame)}
+                    min={0}
+                    max={Math.max(frameCount - 2, 0)}
+                    aria-invalid={fieldError === "start_frame"}
+                    aria-describedby="hint-start_frame"
+                    onChange={(event) => update("start_frame", event.target.value)}
+                  />
+                  <span id="hint-start_frame" className="text-muted-foreground text-xs">
+                    Skip the beginning. A sequence that opens with the camera held still cannot be
+                    solved until it moves.
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="config-max_frames">Frame limit</Label>
+                  <Input
+                    id="config-max_frames"
+                    type="number"
+                    inputMode="numeric"
+                    value={limitFrames}
+                    min={2}
+                    max={frameCount}
+                    aria-invalid={fieldError === "max_frames"}
+                    aria-describedby="hint-max_frames"
+                    onChange={(event) => setLimitFrames(event.target.value)}
+                    placeholder={`All ${frameCount.toLocaleString("en-US")} frames`}
+                  />
+                  <span id="hint-max_frames" className="text-muted-foreground text-xs">
+                    Leave empty to run to the end. A short limit is the quick way to see whether a
+                    config tracks at all.
+                  </span>
+                </div>
+              </div>
+
+              <label
+                htmlFor="config-enhance_contrast"
+                className="flex cursor-pointer items-start gap-3 text-sm"
+              >
+                <input
+                  id="config-enhance_contrast"
+                  type="checkbox"
+                  className="mt-0.5 size-4 cursor-pointer accent-primary"
+                  checked={config.enhance_contrast}
+                  onChange={(event) =>
+                    setConfig((current) => ({
+                      ...current,
+                      enhance_contrast: event.target.checked,
+                    }))
+                  }
+                />
+                <span className="flex flex-col gap-0.5">
+                  <span className="font-medium">Equalise contrast</span>
+                  <span className="text-muted-foreground text-xs">
+                    Room sequences are dark enough that detection finds little without it.
+                  </span>
+                </span>
+              </label>
+            </section>
 
             {error ? (
               <p role="alert" className="text-destructive text-sm">

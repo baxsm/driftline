@@ -32,6 +32,9 @@ class Camera:
     matrix: Array
     distortion: Array
     distortion_model: str
+    #: 4x4 transform carrying a point from the IMU body frame into this camera's frame, as
+    #: kalibr's `T_cam_imu`. None when the sequence did not ship one.
+    body_to_camera: Array | None = None
 
     @property
     def is_equidistant(self) -> bool:
@@ -103,4 +106,24 @@ def camera_from_calibration(calibration: dict[str, object], index: int = 0) -> C
         matrix=matrix,
         distortion=distortion,
         distortion_model=str(camera.get("distortion_model") or "none"),
+        body_to_camera=_body_to_camera(camera.get("t_cam_imu")),
     )
+
+
+def _body_to_camera(raw: object) -> Array | None:
+    """Parse kalibr's `T_cam_imu` into a 4x4, or None when the sequence has no extrinsic.
+
+    This matters for scoring rather than for estimation. Ground truth is recorded in the IMU
+    body frame, the estimate comes out in the camera frame, and the two are about 179 degrees
+    apart on TUM VI. Comparing them without this transform reports that rotation as estimator
+    error, which is how a working estimator can be made to look badly broken.
+    """
+    if not isinstance(raw, list) or len(raw) != 4:
+        return None
+    try:
+        matrix = np.array([[float(value) for value in row] for row in raw], dtype=np.float64)
+    except (TypeError, ValueError):
+        return None
+    if matrix.shape != (4, 4):
+        return None
+    return matrix

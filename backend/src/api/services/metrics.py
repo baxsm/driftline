@@ -7,6 +7,7 @@ and the plot disagreeing because they scored at different moments.
 """
 
 import uuid
+from typing import Any
 
 import numpy as np
 from sqlalchemy import delete, insert, select
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 import logger
 from db.models import Dataset, GroundTruthPose, Pose, PoseError, Run, RunMetrics
 from estimator.artifacts import TUM_HEADER, tum_line
+from estimator.camera import CalibrationMissing, camera_from_calibration
 from metrics.alignment import Alignment, AlignmentMode, align_for_mode
 from metrics.association import DEFAULT_TOLERANCE_NS, associate
 from metrics.errors import DEFAULT_RPE_DELTA_FRAMES
@@ -47,11 +49,45 @@ def _trajectory_from(rows: list[Pose] | list[GroundTruthPose]) -> Trajectory:
     )
 
 
-def estimate_trajectory(session: Session, run_id: uuid.UUID) -> Trajectory:
+def estimate_trajectory(
+    session: Session, run_id: uuid.UUID, calibration: dict[str, Any] | None = None
+) -> Trajectory:
+    """The estimated trajectory, in the body frame when the sequence ships an extrinsic.
+
+    Poses are stored in the camera frame, which is what the estimator produces. Ground truth
+    is recorded in the IMU body frame, so the two are only comparable after `T_cam_imu` is
+    applied. On TUM VI the two frames are about 179 degrees apart.
+    """
     rows = list(
         session.scalars(select(Pose).where(Pose.run_id == run_id).order_by(Pose.timestamp_ns))
     )
-    return _trajectory_from(rows)
+    trajectory = _trajectory_from(rows)
+    extrinsic = _body_to_camera(calibration)
+    return trajectory.to_body_frame(extrinsic) if extrinsic is not None else trajectory
+
+
+def body_frame_positions(
+    positions: Any, quaternions: Any, calibration: dict[str, Any] | None
+) -> Any:
+    """Camera frame positions re-expressed in the body frame, for drawing over truth."""
+    extrinsic = _body_to_camera(calibration)
+    if extrinsic is None or len(positions) == 0:
+        return positions
+    trajectory = Trajectory(
+        timestamps_ns=np.zeros(len(positions), dtype=np.int64),
+        positions=np.asarray(positions, dtype=np.float64),
+        quaternions=np.asarray(quaternions, dtype=np.float64),
+    )
+    return trajectory.to_body_frame(extrinsic).positions
+
+
+def _body_to_camera(calibration: dict[str, Any] | None) -> Any:
+    if not calibration:
+        return None
+    try:
+        return camera_from_calibration(calibration).body_to_camera
+    except CalibrationMissing:
+        return None
 
 
 def truth_trajectory(session: Session, dataset_id: uuid.UUID) -> Trajectory:
@@ -137,21 +173,35 @@ def score_run(
 ) -> Score | None:
     """Score a finished run, or return None when there is nothing to score against.
 
-    None covers three honest cases: the sequence has no ground truth, the run produced no
-    poses, or too few poses matched a truth timestamp to say anything. None of them is an
-    error, and none of them should leave a row of zeros behind that reads as a perfect run.
+    Call `score_run_with_reason` when the caller has to say which case it was. None of them is
+    an error, and none should leave a row of zeros behind that reads as a perfect run.
+    """
+    return score_run_with_reason(session, run, tolerance_ns, rpe_delta_frames)[0]
+
+
+def score_run_with_reason(
+    session: Session,
+    run: Run,
+    tolerance_ns: int = DEFAULT_TOLERANCE_NS,
+    rpe_delta_frames: int = DEFAULT_RPE_DELTA_FRAMES,
+) -> tuple[Score | None, str | None]:
+    """Score a run, returning the reason when it could not be scored.
+
+    The reasons are different claims and the caller has to be able to tell them apart. "this
+    sequence has no ground truth" and "only two poses lined up with truth" both end in no
+    metrics, but only one of them is about the sequence.
     """
     dataset = session.get(Dataset, run.dataset_id)
     if not dataset or not dataset.has_ground_truth:
-        return None
+        return None, "this sequence has no ground truth"
 
-    estimate = estimate_trajectory(session, run.id)
+    estimate = estimate_trajectory(session, run.id, dataset.calibration)
     if len(estimate.timestamps_ns) == 0:
-        return None
+        return None, "the run produced no poses"
 
     truth = truth_trajectory(session, run.dataset_id)
     if len(truth.timestamps_ns) == 0:
-        return None
+        return None, "this sequence has no ground truth poses stored"
 
     try:
         result = score(
@@ -163,7 +213,7 @@ def score_run(
         )
     except NotScorable as exc:
         logger.warn("metrics.not_scorable", {"run": str(run.id), "reason": str(exc)})
-        return None
+        return None, str(exc)
 
     save_score(session, run.id, result, tolerance_ns)
     logger.info(
@@ -175,7 +225,7 @@ def score_run(
             "matched": result.association.matched_count,
         },
     )
-    return result
+    return result, None
 
 
 def get_metrics(session: Session, run_id: uuid.UUID) -> RunMetrics | None:
@@ -194,7 +244,10 @@ def stored_alignment(session: Session, run: Run) -> Alignment | None:
     if not metrics:
         return None
 
-    estimate = estimate_trajectory(session, run.id)
+    dataset = session.get(Dataset, run.dataset_id)
+    estimate = estimate_trajectory(
+        session, run.id, dataset.calibration if dataset else None
+    )
     truth = truth_trajectory(session, run.dataset_id)
     if len(estimate.timestamps_ns) == 0 or len(truth.timestamps_ns) == 0:
         return None

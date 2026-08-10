@@ -129,11 +129,19 @@ def get_trajectory(
     if not alignment:
         return body
 
+    # the alignment was solved in the body frame, so the positions it is applied to have to
+    # be in the body frame too, otherwise the drawn overlay sits somewhere the score never
+    # measured
+    dataset = session.get(Dataset, run.dataset_id)
+    positions = metrics_service.body_frame_positions(
+        _positions(poses),
+        [[pose.qw, pose.qx, pose.qy, pose.qz] for pose in poses],
+        dataset.calibration if dataset else None,
+    )
+
     body["poses"] = [
         pose_response(pose, position=position)
-        for pose, position in zip(
-            poses, alignment.apply_positions(_positions(poses)), strict=True
-        )
+        for pose, position in zip(poses, alignment.apply_positions(positions), strict=True)
     ]
     body["aligned"] = True
     body["alignment"] = alignment.mode
@@ -232,6 +240,10 @@ def get_frame_image(
 ) -> Response:
     """One frame of the sequence, so the tracking view can draw features over it.
 
+    `frame_index` counts from the start of the run, not from the start of the sequence, which
+    is what the stored tracks are numbered by. A run configured to start partway in would
+    otherwise draw its features over the wrong image.
+
     Served as `application/octet-stream` with no content disposition. A download manager
     extension will grab any response that looks like a downloadable file and hand back an
     empty body, which reads downstream as a corrupt image.
@@ -246,10 +258,11 @@ def get_frame_image(
     except SequenceUnreadable as exc:
         raise ApiError("sequence_unreadable", exc.message) from exc
 
-    if frame_index < 0 or frame_index >= len(frames):
+    absolute = int(run.config.get("start_frame", 0)) + frame_index
+    if frame_index < 0 or absolute >= len(frames):
         raise ApiError("frame_not_found", "That frame is not in this sequence.")
 
-    path = frames.path_for(frame_index)
+    path = frames.path_for(absolute)
     if not path.is_file():
         raise ApiError("frame_not_found", "That frame is listed but missing from disk.")
 
@@ -284,7 +297,12 @@ def export_run(
         if len(trajectory.timestamps_ns) == 0:
             raise ApiError("no_ground_truth", "This sequence has no ground truth to export.")
     else:
-        trajectory = metrics_service.estimate_trajectory(session, run.id)
+        # exported in the body frame, the same frame the run was scored in, so that running
+        # evo over these two files reproduces the numbers the UI shows
+        dataset = session.get(Dataset, run.dataset_id)
+        trajectory = metrics_service.estimate_trajectory(
+            session, run.id, dataset.calibration if dataset else None
+        )
         if len(trajectory.timestamps_ns) == 0:
             raise ApiError("no_poses", "This run has no estimated poses to export.")
 

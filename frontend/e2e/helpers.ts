@@ -7,6 +7,12 @@ export const EMPTY_DIR = process.env.E2E_EMPTY_DIR ?? "";
 export const RUN_SEQUENCE_PATH = process.env.E2E_RUN_SEQUENCE_PATH ?? "";
 /** A rendered sequence carrying ground truth, so a run over it can be scored. */
 export const SCORABLE_SEQUENCE_PATH = process.env.E2E_SCORABLE_SEQUENCE_PATH ?? "";
+/**
+ * A rendered sequence with no ground truth, for the unscorable path. It has to be a sequence
+ * that genuinely has none: a scorable one gets scored, and the test would then be asserting
+ * the absence of a panel that is correctly present.
+ */
+export const UNSCORABLE_SEQUENCE_PATH = process.env.E2E_UNSCORABLE_SEQUENCE_PATH ?? "";
 
 export function uniqueEmail(): string {
   const suffix = Math.random().toString(36).slice(2, 10);
