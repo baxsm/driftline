@@ -17,22 +17,23 @@ const GROUND_TRUTH_FALLBACK = "#b4b8c0";
 /**
  * Reads a colour token so the viewer and the rest of the UI cannot drift apart.
  *
- * The tokens are `oklch()`. Three.js cannot parse that and, worse, returns white instead of
- * throwing, so the path would silently render in the wrong colour. The browser is asked to
- * convert it to rgb first by resolving it through a throwaway element's computed style.
+ * The tokens are wide gamut (`oklch()`, which Tailwind emits as `lab()`). Three.js parses
+ * neither and returns **white** instead of throwing, so a mistake here renders a wrong
+ * colour silently. `getComputedStyle` does not downconvert either, it hands back the same
+ * `lab()` string. Painting one pixel on a canvas does force the conversion, and the sRGB
+ * bytes that come back are something Three.js can always read.
  */
 function readColor(token: string, fallback: string): THREE.Color {
   const raw = getComputedStyle(document.documentElement).getPropertyValue(token).trim();
   if (!raw) return new THREE.Color(fallback);
 
-  const probe = document.createElement("span");
-  probe.style.color = raw;
-  probe.style.display = "none";
-  document.body.appendChild(probe);
-  const resolved = getComputedStyle(probe).color;
-  probe.remove();
+  const context = document.createElement("canvas").getContext("2d");
+  if (!context) return new THREE.Color(fallback);
 
-  return new THREE.Color(resolved || fallback);
+  context.fillStyle = raw;
+  context.fillRect(0, 0, 1, 1);
+  const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+  return new THREE.Color(r / 255, g / 255, b / 255);
 }
 
 /**

@@ -25,7 +25,9 @@ const DatasetList: FC<DatasetListProps> = ({ datasets, onUnregister, pendingId }
       const { duration_seconds, has_ground_truth, camera_model, created_at } = dataset;
 
       return (
-        <li key={id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+        // stacks on a phone and sits on one line from sm up, so the actions never wrap into
+        // the middle of the metadata
+        <li key={id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex flex-wrap items-center gap-2">
               <Link
@@ -40,15 +42,18 @@ const DatasetList: FC<DatasetListProps> = ({ datasets, onUnregister, pendingId }
               ) : null}
             </div>
 
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground text-xs">
-              <span>{formatCount(frame_count)} frames</span>
-              <span>{formatCount(imu_sample_count)} IMU samples</span>
-              <span>{formatDuration(duration_seconds)}</span>
-              <span>{formatDate(created_at)}</span>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground text-xs">
+              <span className="whitespace-nowrap">{formatCount(frame_count)} frames</span>
+              <span aria-hidden>/</span>
+              <span className="whitespace-nowrap">{formatCount(imu_sample_count)} IMU</span>
+              <span aria-hidden>/</span>
+              <span className="whitespace-nowrap">{formatDuration(duration_seconds)}</span>
+              <span aria-hidden>/</span>
+              <span className="whitespace-nowrap">{formatDate(created_at)}</span>
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
             {has_ground_truth ? (
               <span className="flex items-center gap-1.5 text-foreground text-xs">
                 <Check className="size-3.5" aria-hidden />

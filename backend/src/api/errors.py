@@ -59,7 +59,13 @@ async def validation_error_handler(_: Request, exc: Exception) -> JSONResponse:
     if callable(errors):
         details = errors()
         if details:
-            location = [str(part) for part in details[0].get("loc", []) if part != "body"]
+            # a malformed body reports loc ("body", 0), where the 0 is a character offset
+            # rather than a field, and naming it would point the user at nothing
+            location = [
+                str(part)
+                for part in details[0].get("loc", [])
+                if part != "body" and not isinstance(part, int)
+            ]
             field = ".".join(location) or None
             message = details[0].get("msg", message)
     return JSONResponse(status_code=422, content=error_body("validation_failed", message, field))

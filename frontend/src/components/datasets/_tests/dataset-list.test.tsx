@@ -35,7 +35,7 @@ describe("DatasetList", () => {
   it("shows the counts and duration in readable units", () => {
     renderList([WITH_TRUTH]);
     expect(screen.getByText("2,821 frames")).toBeInTheDocument();
-    expect(screen.getByText("30,943 IMU samples")).toBeInTheDocument();
+    expect(screen.getByText("30,943 IMU")).toBeInTheDocument();
     expect(screen.getByText("2m 21s")).toBeInTheDocument();
   });
 

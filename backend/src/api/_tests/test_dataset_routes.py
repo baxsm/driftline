@@ -114,6 +114,18 @@ def test_stride_below_one_is_rejected(client, signed_in, sequence_path):
     assert client.get(f"/api/datasets/{dataset_id}/ground-truth?stride=0").status_code == 422
 
 
+def test_a_malformed_body_does_not_name_a_numeric_field(client, signed_in):
+    # a json decode error reports loc ("body", 0), and that 0 is a character offset, so it
+    # must not be handed to the client as a field name
+    response = client.post(
+        "/api/datasets/register",
+        content=b"not json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    assert "field" not in response.json()["error"]
+
+
 def test_unknown_dataset_id_is_a_404(client, signed_in):
     missing = "00000000-0000-0000-0000-000000000000"
     response = client.get(f"/api/datasets/{missing}")

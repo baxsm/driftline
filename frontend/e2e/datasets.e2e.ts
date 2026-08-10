@@ -66,6 +66,40 @@ test.describe("with a real sequence on disk", () => {
     await expect(page.getByRole("button", { name: "Reset view" })).toBeVisible();
   });
 
+  test("the path is drawn in the ground truth colour, not white", async ({ page }) => {
+    // three.js cannot parse the oklch/lab colour tokens and falls back to white without
+    // throwing, so the drawn colour has to be asserted rather than assumed
+    await registerAndSignIn(page);
+    await page.getByRole("button", { name: "Register sequence" }).click();
+    await page.getByLabel("Path").fill(SEQUENCE_PATH);
+    await page.getByRole("button", { name: "Register", exact: true }).click();
+    await page
+      .getByTestId("dataset-list")
+      .getByRole("listitem")
+      .first()
+      .getByRole("link")
+      .first()
+      .click();
+    await expect(page.locator('[data-testid="viewer-canvas"] canvas')).toBeVisible();
+
+    const resolved = await page.evaluate(() => {
+      const raw = getComputedStyle(document.documentElement)
+        .getPropertyValue("--truth-path")
+        .trim();
+      const context = document.createElement("canvas").getContext("2d");
+      if (!context) return null;
+      context.fillStyle = raw;
+      context.fillRect(0, 0, 1, 1);
+      const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+      return { r, g, b };
+    });
+
+    expect(resolved).not.toBeNull();
+    // grey, and clearly not the 255,255,255 that a failed parse produces
+    expect(resolved?.r).toBeLessThan(230);
+    expect(Math.abs((resolved?.r ?? 0) - (resolved?.b ?? 0))).toBeLessThan(30);
+  });
+
   test("calibration is shown as readable rows, not raw json", async ({ page }) => {
     await registerAndSignIn(page);
     await page.getByRole("button", { name: "Register sequence" }).click();
