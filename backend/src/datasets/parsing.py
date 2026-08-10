@@ -78,6 +78,23 @@ def read_frame_timestamps(path: Path) -> list[int]:
     return timestamps
 
 
+def read_frames(path: Path) -> list[tuple[int, str]]:
+    """Read `timestamp,filename` rows, keeping the filename.
+
+    Some sequences omit the filename column, in which case the convention is that the image
+    is named after its timestamp.
+    """
+    frames = []
+    for line in _data_lines(path):
+        parts = _split(line)
+        if not parts:
+            continue
+        timestamp = parse_timestamp_ns(parts[0], source=str(path))
+        filename = parts[1] if len(parts) > 1 and parts[1] else f"{timestamp}.png"
+        frames.append((timestamp, filename))
+    return frames
+
+
 def read_poses(path: Path) -> list[Pose]:
     """Read `timestamp,tx,ty,tz,qw,qx,qy,qz` rows."""
     poses = []

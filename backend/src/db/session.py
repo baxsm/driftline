@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -15,6 +16,16 @@ def get_engine() -> Engine:
 
 
 def get_session() -> Generator[Session]:
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+@contextmanager
+def session_scope() -> Generator[Session]:
+    """A session for code that runs outside a request, like the background worker."""
     session = SessionLocal()
     try:
         yield session

@@ -1,3 +1,6 @@
+import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -7,11 +10,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.errors import ApiError, api_error_handler, http_error_handler, validation_error_handler
 from api.routes.auth import router as auth_router
 from api.routes.datasets import router as datasets_router
+from api.routes.runs import router as runs_router
+from api.services.worker import Worker
 from config import get_settings
 
 settings = get_settings()
+worker = Worker()
 
-app = FastAPI(title="driftline", version="0.1.0")
+# the tests drive the worker directly so a run is deterministic rather than racing a poll
+WORKER_DISABLED = os.getenv("DRIFTLINE_DISABLE_WORKER") == "1"
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    if not WORKER_DISABLED:
+        worker.start()
+    try:
+        yield
+    finally:
+        worker.stop()
+
+
+app = FastAPI(title="driftline", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,6 +47,7 @@ app.add_exception_handler(HTTPException, http_error_handler)  # type: ignore[arg
 
 app.include_router(auth_router)
 app.include_router(datasets_router)
+app.include_router(runs_router)
 
 
 @app.get("/api/health")

@@ -66,6 +66,65 @@ class Dataset(Base):
     )
 
 
+class Run(Base):
+    """One execution of the estimator over one dataset with one config."""
+
+    __tablename__ = "runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    label: Mapped[str | None] = mapped_column(Text)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    failure_reason: Mapped[str | None] = mapped_column(Text)
+    failure_frame: Mapped[int | None] = mapped_column(Integer)
+    processed_frames: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_frames: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    dataset: Mapped[Dataset] = relationship()
+    poses: Mapped[list["Pose"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    __table_args__ = (Index("ix_runs_dataset_created", "dataset_id", created_at.desc()),)
+
+
+class Pose(Base):
+    """The estimated trajectory. One row per estimated frame."""
+
+    __tablename__ = "poses"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
+    )
+    frame_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    timestamp_ns: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    tx: Mapped[float] = mapped_column(Float, nullable=False)
+    ty: Mapped[float] = mapped_column(Float, nullable=False)
+    tz: Mapped[float] = mapped_column(Float, nullable=False)
+    qw: Mapped[float] = mapped_column(Float, nullable=False)
+    qx: Mapped[float] = mapped_column(Float, nullable=False)
+    qy: Mapped[float] = mapped_column(Float, nullable=False)
+    qz: Mapped[float] = mapped_column(Float, nullable=False)
+    tracked_features: Mapped[int | None] = mapped_column(Integer)
+
+    run: Mapped[Run] = relationship(back_populates="poses")
+
+    __table_args__ = (Index("ix_poses_run_ts", "run_id", "timestamp_ns"),)
+
+
 class GroundTruthPose(Base):
     """Truth poses loaded from the dataset.
 

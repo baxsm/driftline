@@ -6,13 +6,20 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Button } from "@/components/ui/button";
 import type { Pose } from "@/lib/types";
 
-interface TrajectoryViewerProps {
+export interface TrajectoryPath {
   poses: Pose[];
+  /** A colour token like `--truth-path`, read from the stylesheet at draw time. */
+  colorToken: string;
+  fallbackColor: string;
+  label: string;
+}
+
+interface TrajectoryViewerProps {
+  /** One entry per path drawn. Several are overlaid in the same space. */
+  paths: TrajectoryPath[];
   /** Shown when there is nothing to draw, so the canvas is never a silent black box. */
   emptyMessage: string;
 }
-
-const GROUND_TRUTH_FALLBACK = "#b4b8c0";
 
 /**
  * Reads a colour token so the viewer and the rest of the UI cannot drift apart.
@@ -61,11 +68,13 @@ interface Extent {
   height: number;
 }
 
-function pathExtent(poses: Pose[]): Extent {
+function pathExtent(paths: TrajectoryPath[]): Extent {
   const box = new THREE.Box3();
   const point = new THREE.Vector3();
-  for (const pose of poses) {
-    box.expandByPoint(point.set(pose.tx, pose.ty, pose.tz));
+  for (const path of paths) {
+    for (const pose of path.poses) {
+      box.expandByPoint(point.set(pose.tx, pose.ty, pose.tz));
+    }
   }
   const centre = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
@@ -76,21 +85,35 @@ function pathExtent(poses: Pose[]): Extent {
   };
 }
 
-const TrajectoryViewer: FC<TrajectoryViewerProps> = ({ poses, emptyMessage }) => {
+const TrajectoryViewer: FC<TrajectoryViewerProps> = ({ paths, emptyMessage }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const resetRef = useRef<(() => void) | null>(null);
   const [ready, setReady] = useState(false);
 
+  const drawable = paths.filter((path) => path.poses.length > 0);
+  const totalPoses = drawable.reduce((sum, path) => sum + path.poses.length, 0);
+  // rebuilding the scene on every render would restart the camera mid-drag, so the effect
+  // keys off what is actually drawn: which paths, how long, and where each one ends
+  const signature = drawable
+    .map((path) => {
+      const last = path.poses[path.poses.length - 1];
+      return `${path.label}:${path.poses.length}:${last.timestamp_ns}`;
+    })
+    .join("|");
+
+  // the scene is rebuilt when the drawn geometry changes. `drawable` is a fresh array on
+  // every render, so `signature` is what the effect actually depends on.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: signature stands in for drawable
   useEffect(() => {
     const mount = mountRef.current;
-    if (!mount || poses.length === 0) return;
+    if (!mount || totalPoses === 0) return;
 
     const scene = new THREE.Scene();
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     mount.appendChild(renderer.domElement);
 
-    const { centre, radius, height } = pathExtent(poses);
+    const { centre, radius, height } = pathExtent(drawable);
 
     // clip planes follow the path size so a small room and a long outdoor run both stay in
     // range without z fighting at one end or clipping at the other
@@ -110,11 +133,14 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({ poses, emptyMessage }) =>
     axes.position.set(centre.x, centre.y - height / 2, centre.z);
     scene.add(axes);
 
-    const geometry = buildPathGeometry(poses);
-    const material = new THREE.LineBasicMaterial({
-      color: readColor("--truth-path", GROUND_TRUTH_FALLBACK),
+    const drawn = drawable.map((path) => {
+      const geometry = buildPathGeometry(path.poses);
+      const material = new THREE.LineBasicMaterial({
+        color: readColor(path.colorToken, path.fallbackColor),
+      });
+      scene.add(new THREE.Line(geometry, material));
+      return { geometry, material };
     });
-    scene.add(new THREE.Line(geometry, material));
 
     function resetView() {
       // distance is derived from the vertical field of view so the path fills the frame at
@@ -154,8 +180,10 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({ poses, emptyMessage }) =>
       cancelAnimationFrame(frame);
       observer.disconnect();
       controls.dispose();
-      geometry.dispose();
-      material.dispose();
+      for (const { geometry, material } of drawn) {
+        geometry.dispose();
+        material.dispose();
+      }
       grid.dispose();
       axes.dispose();
       renderer.dispose();
@@ -163,11 +191,13 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({ poses, emptyMessage }) =>
       resetRef.current = null;
       setReady(false);
     };
-  }, [poses]);
+  }, [signature, totalPoses]);
 
-  if (poses.length === 0) {
+  if (totalPoses === 0) {
+    // a viewer with nothing in it does not need viewer sized space. Keeping the full height
+    // here pushes the rest of the page below the fold to say "there is nothing to draw".
     return (
-      <div className="flex min-h-[320px] flex-1 items-center justify-center rounded-lg border border-border bg-muted/10 px-6 text-center text-muted-foreground text-sm">
+      <div className="flex items-center justify-center rounded-lg border border-border border-dashed bg-muted/10 px-6 py-10 text-center text-muted-foreground text-sm">
         {emptyMessage}
       </div>
     );
@@ -176,6 +206,18 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({ poses, emptyMessage }) =>
   return (
     <div className="relative min-h-[320px] flex-1 overflow-hidden rounded-lg border border-border bg-muted/10">
       <div ref={mountRef} className="absolute inset-0" data-testid="viewer-canvas" />
+      <div className="pointer-events-none absolute top-3 left-3 flex flex-col gap-1.5">
+        {drawable.map((path) => (
+          <span key={path.label} className="flex items-center gap-2 text-xs">
+            <span
+              aria-hidden="true"
+              className="h-0.5 w-4 rounded-full"
+              style={{ backgroundColor: `var(${path.colorToken}, ${path.fallbackColor})` }}
+            />
+            <span className="text-muted-foreground">{path.label}</span>
+          </span>
+        ))}
+      </div>
       {ready ? (
         <Button
           variant="outline"

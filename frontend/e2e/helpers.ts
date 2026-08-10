@@ -3,6 +3,8 @@ import type { Page } from "@playwright/test";
 export const SEQUENCE_PATH = process.env.E2E_SEQUENCE_PATH ?? "";
 /** A real directory with no sequence in it, for the "missing file" error path. */
 export const EMPTY_DIR = process.env.E2E_EMPTY_DIR ?? "";
+/** A short rendered sequence, so a whole run finishes inside a test. */
+export const RUN_SEQUENCE_PATH = process.env.E2E_RUN_SEQUENCE_PATH ?? "";
 
 export function uniqueEmail(): string {
   const suffix = Math.random().toString(36).slice(2, 10);
@@ -19,6 +21,28 @@ export async function registerAndSignIn(page: Page, email = uniqueEmail()): Prom
   await page.getByRole("button", { name: "Create account" }).click();
   await page.waitForURL("**/app/datasets");
   return email;
+}
+
+/** Registers a sequence from the datasets page and opens it. */
+export async function registerSequence(page: Page, path: string, name: string): Promise<void> {
+  await page.goto("/app/datasets");
+  await page.getByRole("button", { name: "Register sequence" }).click();
+  await page.getByLabel("Path").fill(path);
+  await page.getByLabel("Name").fill(name);
+  await page.getByRole("button", { name: "Register" }).click();
+  await page.getByRole("link", { name }).click();
+  await page.waitForURL("**/app/datasets/**");
+}
+
+/** Queues a run from the sequence page and waits for the worker to finish it. */
+export async function queueRunAndWait(page: Page, label: string): Promise<void> {
+  await page.getByRole("button", { name: "New run" }).click();
+  await page.getByLabel("Label").fill(label);
+  await page.getByRole("button", { name: "Queue run" }).click();
+  // the list polls while anything is in flight, so the terminal status arrives on its own
+  await page.getByRole("listitem").filter({ hasText: label }).getByText("Done").waitFor({
+    timeout: 60_000,
+  });
 }
 
 /** Hides the Next dev indicator so it never leaks into a screenshot. */

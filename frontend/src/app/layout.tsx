@@ -28,7 +28,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">
         <AuthProvider>{children}</AuthProvider>
-        <Toaster position="bottom-right" />
+        {/* a confirmation that outlives the action it confirms just sits on top of the page */}
+        <Toaster position="bottom-right" duration={4000} />
       </body>
     </html>
   );

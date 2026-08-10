@@ -43,6 +43,6 @@ disallow_untyped_defs = true
 exclude = ["_tests/"]
 
 [[tool.mypy.overrides]]
-module = ["evo.*", "cv2.*", "yaml.*"]
+module = ["evo.*", "cv2.*", "yaml.*", "pandas.*"]
 ignore_missing_imports = true
 

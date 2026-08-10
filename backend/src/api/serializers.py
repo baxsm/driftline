@@ -6,7 +6,7 @@ added later (a password hash, an internal path) cannot leak into a response by d
 
 from typing import Any
 
-from db.models import Dataset, GroundTruthPose, User
+from db.models import Dataset, GroundTruthPose, Pose, Run, User
 
 
 def user_response(user: User) -> dict[str, Any]:
@@ -44,13 +44,13 @@ def dataset_summary(dataset: Dataset) -> dict[str, Any]:
     }
 
 
-def pose_response(pose: GroundTruthPose) -> dict[str, Any]:
+def pose_response(pose: GroundTruthPose | Pose) -> dict[str, Any]:
     """Timestamps are sent as strings.
 
     JSON numbers are parsed as float64 in JavaScript, which cannot hold a 19 digit
     nanosecond value. Sending the integer as a string keeps it exact on the client.
     """
-    return {
+    body = {
         "timestamp_ns": str(pose.timestamp_ns),
         "tx": pose.tx,
         "ty": pose.ty,
@@ -59,4 +59,43 @@ def pose_response(pose: GroundTruthPose) -> dict[str, Any]:
         "qx": pose.qx,
         "qy": pose.qy,
         "qz": pose.qz,
+    }
+    if isinstance(pose, Pose):
+        body["frame_index"] = pose.frame_index
+        body["tracked_features"] = pose.tracked_features
+    return body
+
+
+def run_response(run: Run) -> dict[str, Any]:
+    return {
+        "id": str(run.id),
+        "dataset_id": str(run.dataset_id),
+        "label": run.label,
+        "config": run.config,
+        "config_hash": run.config_hash,
+        "status": run.status,
+        "failure_reason": run.failure_reason,
+        "failure_frame": run.failure_frame,
+        "processed_frames": run.processed_frames,
+        "total_frames": run.total_frames,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "created_at": run.created_at.isoformat(),
+    }
+
+
+def run_summary(run: Run) -> dict[str, Any]:
+    """List shape. The full config is omitted because the list only shows the hash."""
+    return {
+        "id": str(run.id),
+        "dataset_id": str(run.dataset_id),
+        "dataset_name": run.dataset.name if run.dataset else None,
+        "label": run.label,
+        "config_hash": run.config_hash,
+        "status": run.status,
+        "failure_reason": run.failure_reason,
+        "processed_frames": run.processed_frames,
+        "total_frames": run.total_frames,
+        "created_at": run.created_at.isoformat(),
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
     }

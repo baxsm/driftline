@@ -1,10 +1,28 @@
-import type { DatasetSource } from "./types";
+import type { DatasetSource, RunStatus } from "./types";
 
 export const SOURCE_LABELS: Record<DatasetSource, string> = {
   tum_vi: "TUM VI",
   euroc: "EuRoC",
   custom: "Custom",
 };
+
+export const RUN_STATUS_LABELS: Record<RunStatus, string> = {
+  queued: "Queued",
+  running: "Running",
+  done: "Done",
+  failed: "Failed",
+};
+
+/** Percent of frames processed, or null before the total is known. */
+export function progressPercent(processed: number, total: number): number | null {
+  if (!Number.isFinite(total) || total <= 0) return null;
+  return Math.min(100, Math.round((processed / total) * 100));
+}
+
+/** A config hash is 64 hex characters, which is unreadable in a table. */
+export function shortHash(hash: string): string {
+  return hash.slice(0, 8);
+}
 
 export function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "unknown";

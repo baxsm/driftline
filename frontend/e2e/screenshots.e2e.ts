@@ -1,5 +1,12 @@
 ﻿import { test } from "@playwright/test";
-import { EMPTY_DIR, SEQUENCE_PATH, hideDevIndicator, registerAndSignIn } from "./helpers";
+import {
+  EMPTY_DIR,
+  RUN_SEQUENCE_PATH,
+  SEQUENCE_PATH,
+  hideDevIndicator,
+  registerAndSignIn,
+  registerSequence,
+} from "./helpers";
 
 const DIR = "e2e/screenshots";
 /** 3D and toasts animate in, so captures wait for them to settle rather than catch a frame. */
@@ -42,11 +49,45 @@ test("capture every meaningful state", async ({ page }) => {
 
   await page.goto("/app/runs");
   await page.waitForTimeout(SETTLE_MS);
-  await page.screenshot({ path: `${DIR}/07-runs-not-built.png`, fullPage: true });
+  await page.screenshot({ path: `${DIR}/07-runs-empty.png`, fullPage: true });
 
   await page.goto("/app/compare");
   await page.waitForTimeout(SETTLE_MS);
   await page.screenshot({ path: `${DIR}/08-compare-not-built.png`, fullPage: true });
+
+  if (RUN_SEQUENCE_PATH) {
+    await registerSequence(page, RUN_SEQUENCE_PATH, "shot sequence");
+    await page.getByRole("button", { name: "New run" }).click();
+    await page.waitForTimeout(SETTLE_MS);
+    await page.screenshot({ path: `${DIR}/15-run-config.png`, fullPage: true });
+
+    await page.getByLabel("Max features").fill("5");
+    await page.getByRole("button", { name: "Queue run" }).click();
+    await page.waitForTimeout(SETTLE_MS);
+    await page.screenshot({ path: `${DIR}/16-run-config-error.png`, fullPage: true });
+    await page.getByLabel("Max features").fill("300");
+
+    await page.getByLabel("Label").fill("shot run");
+    await page.getByRole("button", { name: "Queue run" }).click();
+    await page
+      .getByRole("listitem")
+      .filter({ hasText: "shot run" })
+      .getByText("Done")
+      .waitFor({ timeout: 60_000 });
+    await page.waitForTimeout(SETTLE_MS);
+    await page.screenshot({ path: `${DIR}/17-runs-populated.png`, fullPage: true });
+
+    await page.getByRole("link", { name: "shot run" }).click();
+    await page.waitForURL(/\/app\/runs\/[0-9a-f-]+$/);
+    // the 3D path and the first frame both have to finish drawing
+    await page.waitForTimeout(2000);
+    await page.screenshot({ path: `${DIR}/18-run-detail.png`, fullPage: true });
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.waitForTimeout(SETTLE_MS);
+    await page.screenshot({ path: `${DIR}/19-run-detail-375.png`, fullPage: true });
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
 
   if (!SEQUENCE_PATH) return;
 

@@ -1,5 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { formatCount, formatDate, formatDuration, formatRate, SOURCE_LABELS } from "@/lib/format";
+import {
+  formatCount,
+  formatDate,
+  formatDuration,
+  formatRate,
+  progressPercent,
+  SOURCE_LABELS,
+  shortHash,
+} from "@/lib/format";
+
+describe("progressPercent", () => {
+  it("reports how far through a run is", () => {
+    expect(progressPercent(1410, 2821)).toBe(50);
+  });
+
+  it("returns null before the total is known", () => {
+    // 0 of 0 is not 0 percent, it is "no idea yet", and rendering 0% would look like a stall
+    expect(progressPercent(0, 0)).toBeNull();
+  });
+
+  it("never exceeds 100", () => {
+    expect(progressPercent(3000, 2821)).toBe(100);
+  });
+});
+
+describe("shortHash", () => {
+  it("keeps the leading eight characters", () => {
+    expect(shortHash("d2ccd2e94f1b8c7a5e6d0f3b")).toBe("d2ccd2e9");
+  });
+});
 
 describe("formatDuration", () => {
   it("shows seconds below a minute", () => {

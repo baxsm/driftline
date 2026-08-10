@@ -18,6 +18,9 @@ STATUS_BY_CODE = {
     "path_already_registered": 409,
     "sequence_unreadable": 400,
     "validation_failed": 422,
+    "run_not_found": 404,
+    "range_too_large": 400,
+    "frame_not_found": 404,
 }
 
 

@@ -18,6 +18,9 @@ DEFAULT_TEST_DATABASE = "postgresql+psycopg://driftline:driftline@localhost:5435
 os.environ.setdefault("DATABASE_URL", DEFAULT_TEST_DATABASE)
 os.environ.setdefault("SESSION_SECRET", "test-secret-value-that-is-long-enough-32")
 os.environ.setdefault("ENVIRONMENT", "test")
+# the worker polls its own connection, which would not see the fixture's rolled back
+# transaction. Tests that need a run executed call the worker directly instead.
+os.environ["DRIFTLINE_DISABLE_WORKER"] = "1"
 
 # these read the environment at import time, so they load after the defaults above
 from db.models import Base

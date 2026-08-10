@@ -1,15 +1,18 @@
 "use client";
 
 import { type FC, useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import AppTopbar from "@/components/app-topbar";
 import CalibrationPanel from "@/components/datasets/calibration-panel";
+import RunConfigForm from "@/components/runs/run-config-form";
+import RunList from "@/components/runs/run-list";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import TrajectoryViewer from "@/components/viewer/trajectory-viewer";
 import { ApiError, api } from "@/lib/api";
 import { formatCount, formatDuration, formatRate, SOURCE_LABELS } from "@/lib/format";
-import type { Dataset, GroundTruthResponse } from "@/lib/types";
+import type { Dataset, EstimatorConfig, GroundTruthResponse, Run, RunSummary } from "@/lib/types";
 
 /** 120Hz truth is far more than a line needs, so the viewer asks for every 4th pose. */
 const VIEWER_STRIDE = 4;
@@ -22,9 +25,15 @@ const Stat: FC<{ label: string; value: string; hint?: string }> = ({ label, valu
   </div>
 );
 
+/** Queued and running rows go stale on their own, so the list refreshes while any are live. */
+const RUNS_REFRESH_MS = 2000;
+
 const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [truth, setTruth] = useState<GroundTruthResponse | null>(null);
+  const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  const [runsError, setRunsError] = useState<string | null>(null);
+  const [pendingRunId, setPendingRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -57,9 +66,57 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
     }
   }, [datasetId]);
 
+  const loadRuns = useCallback(async () => {
+    setRunsError(null);
+    try {
+      const { runs: rows } = await api.get<{ runs: RunSummary[]; total: number }>(
+        `/api/runs?dataset_id=${datasetId}`,
+      );
+      setRuns(rows);
+    } catch (caught) {
+      setRuns(null);
+      setRunsError(
+        caught instanceof ApiError ? caught.message : "Could not load runs for this sequence.",
+      );
+    }
+  }, [datasetId]);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadRuns();
+  }, [load, loadRuns]);
+
+  useEffect(() => {
+    const live = runs?.some((run) => run.status === "queued" || run.status === "running");
+    if (!live) return;
+    const timer = setInterval(() => void loadRuns(), RUNS_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [runs, loadRuns]);
+
+  async function handleQueue(config: EstimatorConfig, label: string) {
+    const created = await api.post<Run>("/api/runs", {
+      dataset_id: datasetId,
+      config,
+      ...(label ? { label } : {}),
+    });
+    await loadRuns();
+    toast.success("Run queued", {
+      description: `${formatCount(created.total_frames)} frames to estimate.`,
+    });
+  }
+
+  async function handleDeleteRun(run: RunSummary) {
+    setPendingRunId(run.id);
+    try {
+      await api.delete(`/api/runs/${run.id}`);
+      await loadRuns();
+      toast.success("Run deleted", { description: "Its poses and artifacts were removed." });
+    } catch (caught) {
+      toast.error(caught instanceof ApiError ? caught.message : "Could not delete that run.");
+    } finally {
+      setPendingRunId(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -97,7 +154,10 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
 
   return (
     <>
-      <AppTopbar title={name} />
+      <AppTopbar
+        title={name}
+        action={<RunConfigForm frameCount={frame_count} onQueue={handleQueue} />}
+      />
 
       <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
@@ -130,7 +190,8 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
             </div>
           </section>
 
-          <section className="flex min-h-[380px] flex-col gap-2">
+          {/* the reserved height is for a drawn path; an empty state sizes to its own text */}
+          <section className={`flex flex-col gap-2 ${has_ground_truth ? "min-h-[380px]" : ""}`}>
             <div className="flex items-baseline justify-between gap-4">
               <h2 className="font-medium text-sm">Ground truth path</h2>
               {truth && truth.poses.length > 0 ? (
@@ -144,12 +205,46 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
               <Skeleton className="min-h-[320px] flex-1 rounded-lg" />
             ) : (
               <TrajectoryViewer
-                poses={truth?.poses ?? []}
+                paths={[
+                  {
+                    poses: truth?.poses ?? [],
+                    colorToken: "--truth-path",
+                    fallbackColor: "#b4b8c0",
+                    label: "Ground truth",
+                  },
+                ]}
                 emptyMessage={
                   has_ground_truth
                     ? "Ground truth is recorded but no poses were returned."
                     : "This sequence ships no ground truth, so there is no reference path to draw."
                 }
+              />
+            )}
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <h2 className="font-medium text-sm">Runs</h2>
+            {runsError ? (
+              <ErrorState
+                title="Could not load runs"
+                message={runsError}
+                onRetry={() => void loadRuns()}
+              />
+            ) : runs === null ? (
+              <LoadingRows rows={2} />
+            ) : runs.length === 0 ? (
+              <EmptyState title="No runs on this sequence">
+                <p>
+                  A run estimates a trajectory from these frames with one config. Queue one to see
+                  where the estimate drifts.
+                </p>
+              </EmptyState>
+            ) : (
+              <RunList
+                runs={runs}
+                onDelete={handleDeleteRun}
+                pendingId={pendingRunId}
+                showDataset={false}
               />
             )}
           </section>
