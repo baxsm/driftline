@@ -1,4 +1,4 @@
-﻿from typing import Any
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError

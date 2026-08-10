@@ -1,0 +1,93 @@
+﻿import { test } from "@playwright/test";
+import { EMPTY_DIR, SEQUENCE_PATH, hideDevIndicator, registerAndSignIn } from "./helpers";
+
+const DIR = "e2e/screenshots";
+/** 3D and toasts animate in, so captures wait for them to settle rather than catch a frame. */
+const SETTLE_MS = 600;
+
+test.beforeEach(async ({ page }) => {
+  await hideDevIndicator(page);
+});
+
+test("capture every meaningful state", async ({ page }) => {
+  await page.goto("/login");
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: `${DIR}/01-login.png`, fullPage: true });
+
+  await page.goto("/register");
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: `${DIR}/02-register.png`, fullPage: true });
+
+  await page.getByLabel("Email").fill("not-an-email");
+  await page.getByLabel("Password").fill("short");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: `${DIR}/03-register-error.png`, fullPage: true });
+
+  await registerAndSignIn(page);
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: `${DIR}/04-datasets-empty.png`, fullPage: true });
+
+  await page.getByRole("button", { name: "Register sequence" }).click();
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: `${DIR}/05-register-dialog.png`, fullPage: true });
+
+  if (EMPTY_DIR) {
+    await page.getByLabel("Path").fill(EMPTY_DIR);
+    await page.getByRole("button", { name: "Register", exact: true }).click();
+    await page.waitForTimeout(SETTLE_MS);
+    await page.screenshot({ path: `${DIR}/06-dialog-error.png`, fullPage: true });
+    await page.keyboard.press("Escape");
+  }
+
+  await page.goto("/app/runs");
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: `${DIR}/07-runs-not-built.png`, fullPage: true });
+
+  await page.goto("/app/compare");
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: `${DIR}/08-compare-not-built.png`, fullPage: true });
+
+  if (!SEQUENCE_PATH) return;
+
+  await page.goto("/app/datasets");
+  await page.getByRole("button", { name: "Register sequence" }).click();
+  await page.getByLabel("Path").fill(SEQUENCE_PATH);
+  await page.getByRole("button", { name: "Register", exact: true }).click();
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: `${DIR}/09-datasets-populated.png`, fullPage: true });
+
+  // the toast sits bottom right over the list, so it is dismissed before navigating
+  await page.locator("[data-sonner-toast]").first().hover();
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+
+  await page
+    .getByTestId("dataset-list")
+    .getByRole("listitem")
+    .first()
+    .getByRole("link")
+    .first()
+    .click();
+  await page.waitForURL(/\/app\/datasets\/[0-9a-f-]+$/);
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: `${DIR}/10-dataset-detail.png`, fullPage: true });
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: `${DIR}/11-detail-375.png`, fullPage: true });
+
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: `${DIR}/12-mobile-nav.png`, fullPage: true });
+
+  await page.keyboard.press("Escape");
+  await page.goto("/app/datasets");
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: `${DIR}/13-datasets-375.png`, fullPage: true });
+
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.goto("/login");
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: `${DIR}/14-login-768.png`, fullPage: true });
+});

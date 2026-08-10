@@ -8,7 +8,7 @@ without touching the filesystem again.
 import uuid
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
 import logger
@@ -74,23 +74,24 @@ def register_dataset(
 
     if info.has_ground_truth:
         poses = read_ground_truth(Path(info.path))
-        for start in range(0, len(poses), GROUND_TRUTH_CHUNK):
-            session.bulk_save_objects(
-                [
-                    GroundTruthPose(
-                        dataset_id=dataset.id,
-                        timestamp_ns=pose.timestamp_ns,
-                        tx=pose.tx,
-                        ty=pose.ty,
-                        tz=pose.tz,
-                        qw=pose.qw,
-                        qx=pose.qx,
-                        qy=pose.qy,
-                        qz=pose.qz,
-                    )
-                    for pose in poses[start : start + GROUND_TRUTH_CHUNK]
-                ]
-            )
+        # a room sequence carries over 16000 truth poses, so these go in as plain mappings
+        # through a core insert rather than as one ORM object per row
+        rows = [
+            {
+                "dataset_id": dataset.id,
+                "timestamp_ns": pose.timestamp_ns,
+                "tx": pose.tx,
+                "ty": pose.ty,
+                "tz": pose.tz,
+                "qw": pose.qw,
+                "qx": pose.qx,
+                "qy": pose.qy,
+                "qz": pose.qz,
+            }
+            for pose in poses
+        ]
+        for start in range(0, len(rows), GROUND_TRUTH_CHUNK):
+            session.execute(insert(GroundTruthPose), rows[start : start + GROUND_TRUTH_CHUNK])
 
     session.commit()
     session.refresh(dataset)
@@ -116,14 +117,19 @@ def delete_dataset(session: Session, user_id: uuid.UUID, dataset_id: str) -> Non
 
 def ground_truth_poses(
     session: Session, dataset_id: uuid.UUID, stride: int = 1
-) -> list[GroundTruthPose]:
+) -> tuple[list[GroundTruthPose], int]:
+    """Return the decimated poses and the total before decimation.
+
+    The total is what the UI needs to say "N of M drawn" honestly. Without it the caller has
+    to compare against the frame count, which is a different number entirely.
+    """
     statement = (
         select(GroundTruthPose)
         .where(GroundTruthPose.dataset_id == dataset_id)
         .order_by(GroundTruthPose.timestamp_ns)
     )
     poses = list(session.scalars(statement))
-    return poses[::stride] if stride > 1 else poses
+    return (poses[::stride] if stride > 1 else poses), len(poses)
 
 
 def clear_ground_truth(session: Session, dataset_id: uuid.UUID) -> None:

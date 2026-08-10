@@ -1,4 +1,4 @@
-﻿from typing import Any
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -64,9 +64,10 @@ def get_ground_truth(
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     dataset = service.get_dataset(session, user.id, dataset_id)
-    poses = service.ground_truth_poses(session, dataset.id, stride)
+    poses, total = service.ground_truth_poses(session, dataset.id, stride)
     return {
         "poses": [pose_response(pose) for pose in poses],
         "stride": stride,
+        "total": total,
         "has_ground_truth": dataset.has_ground_truth,
     }

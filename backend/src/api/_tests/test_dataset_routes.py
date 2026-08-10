@@ -101,6 +101,14 @@ def test_stride_decimates_the_ground_truth(client, signed_in, sequence_path):
     assert len(poses) == 1
 
 
+def test_total_reports_the_count_before_decimation(client, signed_in, sequence_path):
+    # the UI says "N of M drawn", so M has to be the truth pose count, not the frame count
+    dataset_id = register(client, sequence_path).json()["id"]
+    body = client.get(f"/api/datasets/{dataset_id}/ground-truth?stride=2").json()
+    assert body["total"] == 2
+    assert len(body["poses"]) == 1
+
+
 def test_stride_below_one_is_rejected(client, signed_in, sequence_path):
     dataset_id = register(client, sequence_path).json()["id"]
     assert client.get(f"/api/datasets/{dataset_id}/ground-truth?stride=0").status_code == 422
