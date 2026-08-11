@@ -71,10 +71,17 @@ export async function queueRunAndWait(page: Page, label: string): Promise<void> 
   await page.getByRole("button", { name: "New run" }).click();
   await page.getByLabel("Label").fill(label);
   await page.getByRole("button", { name: "Queue run" }).click();
-  // the list polls while anything is in flight, so the terminal status arrives on its own
-  await page.getByRole("listitem").filter({ hasText: label }).getByText("Done").waitFor({
-    timeout: 60_000,
-  });
+  /*
+   * The list polls while anything is in flight, so the terminal state arrives on its own.
+   * A finished run carries no badge, because "Done" on every row buries the rows that
+   * failed, so the score cell is what settles: it reads "no score yet" until the run stops,
+   * then either an ATE or "not scored" for a sequence with no ground truth to score against.
+   */
+  await page
+    .getByRole("listitem")
+    .filter({ hasText: label })
+    .getByText(/ATE|not scored/)
+    .waitFor({ timeout: 60_000 });
 }
 
 /** Hides the Next dev indicator so it never leaks into a screenshot. */

@@ -212,7 +212,7 @@ const TrackingView: FC<TrackingViewProps> = ({ runId, frameCount, initialFrame =
               setFrameIndex(Number(event.target.value));
             }}
             aria-label="Frame"
-            className="h-1 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-border accent-foreground"
+            className="scrubber min-w-0 flex-1"
           />
 
           <span className="w-24 shrink-0 text-right font-mono text-muted-foreground text-xs">

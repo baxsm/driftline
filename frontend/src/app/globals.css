@@ -10,17 +10,10 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-geist-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
   --color-truth-path: var(--truth-path);
   --color-error-low: var(--error-low);
   --color-error-high: var(--error-high);
+  --color-error-rot: var(--error-rot);
   --color-estimate-path: var(--estimate-path);
   --color-compare-path: var(--compare-path);
   --color-track-new: var(--track-new);
@@ -80,14 +73,15 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+
+  /*
+   * Motion. Two durations and one easing, so a transition added later matches the ones
+   * already here instead of inventing its own timing. Everything decorative is quick enough
+   * to read as feedback rather than as an effect being played.
+   */
+  --motion-quick: 120ms;
+  --motion-settle: 220ms;
+  --motion-ease: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .dark {
@@ -114,14 +108,6 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
 
   /*
    * Reserved for trajectory meaning, never for chrome. Ground truth is neutral because it
@@ -132,6 +118,14 @@
   --truth-path: oklch(0.78 0.005 250);
   --error-low: oklch(0.72 0.14 195);
   --error-high: oklch(0.70 0.19 35);
+
+  /*
+   * Rotation error is a second series, not a second magnitude. Drawing it on `--error-high`
+   * put both plots in the same red, so the only thing separating position from rotation was
+   * the label above each one. This hue sits off the magnitude ramp for that reason: it reads
+   * as a different quantity rather than as a hotter reading of the same one.
+   */
+  --error-rot: oklch(0.76 0.13 300);
 
   /*
    * The estimate is the subject, so it carries the only saturated hue on the path. It sits
@@ -170,5 +164,125 @@
   }
   html {
     @apply font-sans;
+  }
+
+  /*
+   * One switch for every animation in the app. Motion here is feedback, never content, so
+   * removing it costs nothing: the same states are still reachable and still readable. The
+   * near-zero duration rather than `none` keeps transitionend and animationend handlers
+   * firing, which a plain `animation: none` would strand.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /*
+   * Rows and panels fade up as they arrive. The travel is deliberately small; this marks
+   * that content appeared, it is not an effect worth watching on every navigation.
+   */
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .animate-rise-in {
+    animation: rise-in var(--motion-settle) var(--motion-ease) both;
+  }
+
+  /*
+   * A run that is still going. The docs reserve colour for abnormal states, so a live run is
+   * marked by motion rather than by a green dot that would read as a result.
+   */
+  @keyframes live-pulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.35;
+      transform: scale(0.82);
+    }
+  }
+
+  .animate-live-pulse {
+    animation: live-pulse 1.8s var(--motion-ease) infinite;
+  }
+
+  /*
+   * The scrubber under the plots and the tracking view. `accent-color` alone leaves the
+   * browser's default track, which is a raised grey bar that belongs to no other control in
+   * the app. The thumb grows on hover and while dragging so the grab point is obvious on a
+   * plot that is only a few pixels tall.
+   */
+  .scrubber {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .scrubber::-webkit-slider-runnable-track {
+    height: 3px;
+    border-radius: 9999px;
+    background: var(--border);
+  }
+
+  .scrubber::-moz-range-track {
+    height: 3px;
+    border-radius: 9999px;
+    background: var(--border);
+  }
+
+  .scrubber::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -4.5px;
+    border: none;
+    border-radius: 9999px;
+    background: var(--foreground);
+    transition: transform var(--motion-quick) var(--motion-ease);
+  }
+
+  .scrubber::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: none;
+    border-radius: 9999px;
+    background: var(--foreground);
+    transition: transform var(--motion-quick) var(--motion-ease);
+  }
+
+  .scrubber:hover::-webkit-slider-thumb,
+  .scrubber:active::-webkit-slider-thumb {
+    transform: scale(1.25);
+  }
+
+  .scrubber:hover::-moz-range-thumb,
+  .scrubber:active::-moz-range-thumb {
+    transform: scale(1.25);
+  }
+
+  .scrubber:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring), transparent 50%);
+  }
+
+  .scrubber:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring), transparent 50%);
   }
 }

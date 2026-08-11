@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Minus } from "lucide-react";
+import { Check, Loader2, Minus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import type { FC } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +19,10 @@ interface DatasetListProps {
  * is nested inside another bordered container.
  */
 const DatasetList: FC<DatasetListProps> = ({ datasets, onUnregister, pendingId }) => (
-  <ul data-testid="dataset-list" className="divide-y divide-border rounded-lg border border-border">
+  <ul
+    data-testid="dataset-list"
+    className="animate-rise-in divide-y divide-border overflow-hidden rounded-xl border border-border bg-card/40"
+  >
     {datasets.map((dataset) => {
       const { id, name, source, frame_count, imu_sample_count } = dataset;
       const { duration_seconds, has_ground_truth, camera_model, created_at } = dataset;
@@ -27,7 +30,10 @@ const DatasetList: FC<DatasetListProps> = ({ datasets, onUnregister, pendingId }
       return (
         // stacks on a phone and sits on one line from sm up, so the actions never wrap into
         // the middle of the metadata
-        <li key={id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
+        <li
+          key={id}
+          className="flex flex-col gap-3 px-4 py-3 transition-colors duration-(--motion-quick) hover:bg-muted/40 sm:flex-row sm:items-center sm:gap-4"
+        >
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex flex-wrap items-center gap-2">
               <Link
@@ -69,13 +75,21 @@ const DatasetList: FC<DatasetListProps> = ({ datasets, onUnregister, pendingId }
               </span>
             )}
 
+            {/* the files on disk are untouched, so this is reversible, but it still removes
+                every run scored against the sequence and reads as destructive */}
             <Button
-              variant="ghost"
-              size="sm"
+              variant="destructive"
+              size="icon-sm"
               onClick={() => onUnregister(dataset)}
               disabled={pendingId === id}
+              aria-label={`Unregister ${name}`}
+              title="Unregister this sequence"
             >
-              {pendingId === id ? "Removing" : "Unregister"}
+              {pendingId === id ? (
+                <Loader2 className="animate-spin" aria-hidden />
+              ) : (
+                <Trash2 aria-hidden />
+              )}
             </Button>
           </div>
         </li>

@@ -116,13 +116,19 @@ describe("RunList", () => {
 
   it("hands the row back when delete is pressed", async () => {
     const { onDelete } = renderList([DONE]);
-    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete Baseline mono" }));
     expect(onDelete).toHaveBeenCalledWith(DONE);
+  });
+
+  // the control is an icon, so the run it would delete has to be in its accessible name
+  it("names the run it would delete", () => {
+    renderList([DONE]);
+    expect(screen.getByRole("button", { name: "Delete Baseline mono" })).toBeInTheDocument();
   });
 
   it("disables the row being deleted", () => {
     renderList([DONE], DONE.id);
-    expect(screen.getByRole("button", { name: "Deleting" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete Baseline mono" })).toBeDisabled();
   });
 
   it("shows the ATE with the alignment it was measured under", () => {

@@ -1,7 +1,9 @@
 "use client";
 
+import { Crosshair } from "lucide-react";
 import { type FC, useMemo } from "react";
 import ErrorPlot from "@/components/runs/error-plot";
+import { Button } from "@/components/ui/button";
 import { formatCount, formatDegrees, formatMetres } from "@/lib/format";
 import type { PoseErrorPoint } from "@/lib/types";
 
@@ -52,7 +54,7 @@ const ErrorInspector: FC<ErrorInspectorProps> = ({ errors, selected, onSelect })
           aria-valuetext={`Pose ${current + 1} of ${errors.length}, position error ${formatMetres(
             point.trans_error,
           )}, rotation error ${formatDegrees(point.rot_error)}`}
-          className="w-full cursor-pointer accent-foreground"
+          className="scrubber"
         />
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
           <span className="text-muted-foreground">
@@ -61,13 +63,16 @@ const ErrorInspector: FC<ErrorInspectorProps> = ({ errors, selected, onSelect })
           <span className="font-mono tabular-nums">
             {formatMetres(point.trans_error)} · {formatDegrees(point.rot_error)}
           </span>
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="xs"
             onClick={() => onSelect(worst)}
-            className="ml-auto cursor-pointer text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            className="ml-auto"
+            title={`Pose ${formatCount(worst + 1)}, the largest position error in this run`}
           >
+            <Crosshair aria-hidden />
             Jump to worst pose
-          </button>
+          </Button>
         </div>
       </div>
     </div>

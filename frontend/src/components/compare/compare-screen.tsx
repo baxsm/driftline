@@ -9,6 +9,7 @@ import MetricDeltas from "@/components/compare/metric-deltas";
 import RunStatusBadge from "@/components/runs/run-status-badge";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states";
 import { Button } from "@/components/ui/button";
+import Panel from "@/components/ui/panel";
 import TrajectoryViewer, { type TrajectoryPath } from "@/components/viewer/trajectory-viewer";
 import { ApiError, api } from "@/lib/api";
 import { formatCount, shortHash, truthWindowQuery } from "@/lib/format";
@@ -44,7 +45,7 @@ const SideSummary: FC<{ side: CompareSide; token: string }> = ({ side, token }) 
       >
         {sideLabel(side)}
       </Link>
-      <RunStatusBadge status={side.status} />
+      <RunStatusBadge status={side.status} showDone />
     </div>
     <span className="font-mono text-muted-foreground text-xs">{shortHash(side.config_hash)}</span>
     {side.status === "failed" && side.failure_reason ? (
@@ -200,35 +201,32 @@ const CompareScreen: FC<CompareScreenProps> = ({ runA, runB }) => {
             />
           ) : (
             <>
-              <section className="flex flex-col gap-4 sm:flex-row sm:gap-8">
+              <section className="flex animate-rise-in flex-col gap-4 rounded-xl border border-border bg-card/40 px-4 py-3.5 sm:flex-row sm:gap-8">
                 <SideSummary side={data.a} token="var(--estimate-path)" />
                 <SideSummary side={data.b} token="var(--compare-path)" />
               </section>
 
-              <section className="flex flex-col gap-3">
-                <h2 className="font-medium text-sm">What changed</h2>
+              <Panel title="What changed" bodyClassName="p-0">
                 <ConfigDiff
                   rows={data.config_diff}
                   labelA={sideLabel(data.a)}
                   labelB={sideLabel(data.b)}
                 />
-              </section>
+              </Panel>
 
-              <section className="flex min-h-[380px] flex-col gap-2">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h2 className="font-medium text-sm">Both paths</h2>
-                  <span className="text-muted-foreground text-xs">
-                    {data.a.dataset_name ?? "the same sequence"}
-                  </span>
-                </div>
+              <Panel
+                title="Both paths"
+                aside={data.a.dataset_name ?? "the same sequence"}
+                className="min-h-[min(620px,calc(100svh-9rem))]"
+                bodyClassName="flex min-h-0 flex-1 flex-col p-0"
+              >
                 <TrajectoryViewer
                   paths={paths}
                   emptyMessage="Neither of these runs produced a path to draw."
                 />
-              </section>
+              </Panel>
 
-              <section className="flex flex-col gap-3">
-                <h2 className="font-medium text-sm">Scores</h2>
+              <Panel title="Scores" bodyClassName="p-0">
                 <MetricDeltas
                   rows={data.metric_deltas}
                   labelA={sideLabel(data.a)}
@@ -236,11 +234,10 @@ const CompareScreen: FC<CompareScreenProps> = ({ runA, runB }) => {
                   alignmentA={data.a.metrics?.alignment ?? null}
                   alignmentB={data.b.metrics?.alignment ?? null}
                 />
-              </section>
+              </Panel>
 
               {data.a.errors.length > 0 || data.b.errors.length > 0 ? (
-                <section className="flex flex-col gap-3">
-                  <h2 className="font-medium text-sm">Error over the run</h2>
+                <Panel title="Error over the run" bodyClassName="flex flex-col gap-3">
                   <CompareErrorPlot
                     a={data.a.errors}
                     b={data.b.errors}
@@ -255,7 +252,7 @@ const CompareScreen: FC<CompareScreenProps> = ({ runA, runB }) => {
                     labelB={sideLabel(data.b)}
                     kind="rotation"
                   />
-                </section>
+                </Panel>
               ) : null}
             </>
           )}

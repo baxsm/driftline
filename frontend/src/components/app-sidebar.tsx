@@ -30,10 +30,13 @@ export const SidebarLinks: FC<AppSidebarProps> = ({ onNavigate }) => {
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
+              // the rail marks the current section on its own, so the active row does not
+              // depend on a background tint that is only a few percent off the page
+              "relative flex items-center gap-2.5 rounded-md py-2 pr-2.5 pl-3.5 text-sm transition-colors duration-(--motion-quick)",
+              "before:absolute before:top-1.5 before:bottom-1.5 before:left-0 before:w-0.5 before:rounded-full before:transition-colors before:duration-(--motion-quick)",
               active
-                ? "bg-muted font-medium text-foreground"
-                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                ? "bg-muted font-medium text-foreground before:bg-foreground"
+                : "text-muted-foreground before:bg-transparent hover:bg-muted/60 hover:text-foreground",
             )}
           >
             <Icon className="size-4 shrink-0" aria-hidden />

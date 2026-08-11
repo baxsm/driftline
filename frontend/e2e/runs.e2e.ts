@@ -28,8 +28,11 @@ test.describe("runs", () => {
     await registerSequence(page, RUN_SEQUENCE_PATH, "e2e line");
     await queueRunAndWait(page, "e2e baseline");
 
+    // a finished run is the normal case and carries no badge, so what marks it as finished is
+    // the score cell settling and the frame count reaching the total
     const row = page.getByRole("listitem").filter({ hasText: "e2e baseline" });
-    await expect(row.getByText("Done")).toBeVisible();
+    await expect(row.getByText("Done")).toHaveCount(0);
+    await expect(row.getByText(/ATE|not scored/)).toBeVisible();
     await expect(row).toContainText("of");
   });
 

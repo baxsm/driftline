@@ -65,13 +65,21 @@ describe("DatasetList", () => {
 
   it("hands the row back when unregister is pressed", async () => {
     const { onUnregister } = renderList([WITH_TRUTH]);
-    await userEvent.click(screen.getByRole("button", { name: "Unregister" }));
+    await userEvent.click(screen.getByRole("button", { name: `Unregister ${WITH_TRUTH.name}` }));
     expect(onUnregister).toHaveBeenCalledWith(WITH_TRUTH);
+  });
+
+  // the control is an icon, so the sequence it would remove has to be in its accessible name
+  it("names the sequence it would unregister", () => {
+    renderList([WITH_TRUTH]);
+    expect(
+      screen.getByRole("button", { name: `Unregister ${WITH_TRUTH.name}` }),
+    ).toBeInTheDocument();
   });
 
   it("disables the row being removed", () => {
     renderList([WITH_TRUTH], WITH_TRUTH.id);
-    expect(screen.getByRole("button", { name: "Removing" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: `Unregister ${WITH_TRUTH.name}` })).toBeDisabled();
   });
 
   it("omits the camera model when the reader did not find one", () => {

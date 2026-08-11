@@ -91,7 +91,7 @@ test("capture every meaningful state", async ({ page }) => {
     await page
       .getByRole("listitem")
       .filter({ hasText: "shot run" })
-      .getByText("Done")
+      .getByText(/ATE|not scored/)
       .waitFor({ timeout: 60_000 });
     await page.waitForTimeout(SETTLE_MS);
     await page.screenshot({ path: `${DIR}/17-runs-populated.png`, fullPage: true });
@@ -118,7 +118,7 @@ test("capture every meaningful state", async ({ page }) => {
     await page
       .getByRole("listitem")
       .filter({ hasText: "shot scored" })
-      .getByText("Done")
+      .getByText(/ATE|not scored/)
       .waitFor({ timeout: 60_000 });
 
     await page.getByRole("link", { name: "shot scored" }).click();
@@ -147,7 +147,7 @@ test("capture every meaningful state", async ({ page }) => {
     await page
       .getByRole("listitem")
       .filter({ hasText: "shot second" })
-      .getByText("Done")
+      .getByText(/ATE|not scored/)
       .waitFor({ timeout: 60_000 });
 
     await page.goto("/app/runs");

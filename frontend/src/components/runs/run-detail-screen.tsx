@@ -1,5 +1,6 @@
 "use client";
 
+import { Database } from "lucide-react";
 import Link from "next/link";
 import { type FC, useCallback, useEffect, useMemo, useState } from "react";
 import AppTopbar from "@/components/app-topbar";
@@ -9,6 +10,8 @@ import RunLog from "@/components/runs/run-log";
 import RunStatusBadge from "@/components/runs/run-status-badge";
 import TrackingView from "@/components/runs/tracking-view";
 import { ErrorState, LoadingRows } from "@/components/states";
+import { Button } from "@/components/ui/button";
+import Panel from "@/components/ui/panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import TrajectoryViewer, { type TrajectoryPath } from "@/components/viewer/trajectory-viewer";
 import { ApiError, api } from "@/lib/api";
@@ -279,22 +282,29 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
           <section className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center gap-2">
-              <RunStatusBadge status={status} />
-              <span className="font-mono text-muted-foreground text-xs">
+              <RunStatusBadge status={status} showDone />
+              <span
+                className="font-mono text-muted-foreground text-xs"
+                title="Config fingerprint. Runs with the same settings share it."
+              >
                 {shortHash(config_hash)}
               </span>
-              <Link
-                href={`/app/datasets/${dataset_id}`}
-                className="text-muted-foreground text-xs underline-offset-4 hover:underline"
-              >
-                View sequence
-              </Link>
+              <Button asChild variant="outline" size="xs" className="ml-auto">
+                <Link href={`/app/datasets/${dataset_id}`}>
+                  <Database aria-hidden />
+                  View sequence
+                </Link>
+              </Button>
             </div>
 
             {inFlight ? (
               <div className="flex flex-col gap-2">
                 <div className="flex items-baseline justify-between gap-4">
-                  <span className="text-sm">
+                  <span className="flex items-center gap-2 text-sm">
+                    <span
+                      aria-hidden
+                      className="size-1.5 animate-live-pulse rounded-full bg-foreground"
+                    />
                     {status === "queued" ? "Waiting for the worker" : "Estimating"}
                   </span>
                   <span className="font-mono text-muted-foreground text-xs">
@@ -333,7 +343,7 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
               </div>
             ) : null}
 
-            <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4 rounded-xl border border-border bg-card/40 px-4 py-3.5 sm:grid-cols-4">
               <Stat
                 label="Mode"
                 value={config.mode}
@@ -354,32 +364,30 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
           </section>
 
           {!inFlight ? (
-            <section className="flex flex-col gap-3">
-              <h2 className="font-medium text-sm">Accuracy</h2>
+            <Panel title="Accuracy">
               <MetricsPanel metrics={metrics} status={status} />
-            </section>
+            </Panel>
           ) : null}
 
           {/* the reserved height is for a drawn path; an empty state sizes to its own text */}
-          <section
-            className={`flex flex-col gap-2 ${
-              inFlight || (trajectory?.poses.length ?? 0) > 0 ? "min-h-[380px]" : ""
-            }`}
+          <Panel
+            title={trajectory?.aligned ? "Estimate against ground truth" : "Estimated path"}
+            aside={
+              trajectory?.aligned
+                ? "Aligned onto ground truth, so distances are in metres"
+                : trajectory?.scale_is_arbitrary
+                  ? "Monocular, so distances have no absolute scale"
+                  : "Metres, measured by the IMU rather than fitted to truth"
+            }
+            className={
+              inFlight || (trajectory?.poses.length ?? 0) > 0
+                ? "min-h-[min(620px,calc(100svh-9rem))]"
+                : ""
+            }
+            bodyClassName="flex min-h-0 flex-1 flex-col p-0"
           >
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-medium text-sm">
-                {trajectory?.aligned ? "Estimate against ground truth" : "Estimated path"}
-              </h2>
-              <span className="text-muted-foreground text-xs">
-                {trajectory?.aligned
-                  ? "Aligned onto ground truth, so distances are in metres"
-                  : trajectory?.scale_is_arbitrary
-                    ? "Monocular, so distances have no absolute scale"
-                    : "Metres, measured by the IMU rather than fitted to truth"}
-              </span>
-            </div>
             {inFlight ? (
-              <Skeleton className="min-h-[320px] flex-1 rounded-lg" />
+              <Skeleton className="min-h-[320px] flex-1 rounded-none" />
             ) : (
               <TrajectoryViewer
                 paths={viewerPaths}
@@ -392,29 +400,27 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
                 }
               />
             )}
-          </section>
+          </Panel>
 
           {poseErrors.length > 0 ? (
-            <section className="flex flex-col gap-3">
-              <h2 className="font-medium text-sm">Error over the run</h2>
+            <Panel title="Error over the run" aside="Click a plot to move the marker">
               <ErrorInspector
                 errors={poseErrors}
                 selected={selectedPose}
                 onSelect={setSelectedPose}
               />
-            </section>
+            </Panel>
           ) : null}
 
           {!inFlight && processed_frames > 0 ? (
-            <section className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="font-medium text-sm">Feature tracking</h2>
-                {status === "failed" && failure_frame !== null ? (
-                  <span className="text-muted-foreground text-xs">
-                    Opened at frame {formatCount(failure_frame)}, where the run failed
-                  </span>
-                ) : null}
-              </div>
+            <Panel
+              title="Feature tracking"
+              aside={
+                status === "failed" && failure_frame !== null
+                  ? `Opened at frame ${formatCount(failure_frame)}, where the run failed`
+                  : undefined
+              }
+            >
               {/*
                 a failed run opens on the frame it failed at rather than at the start. That
                 frame is the reason the run ended, and what its features look like there is
@@ -425,14 +431,13 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
                 frameCount={processed_frames}
                 initialFrame={status === "failed" && failure_frame !== null ? failure_frame : 0}
               />
-            </section>
+            </Panel>
           ) : null}
 
           {!inFlight ? (
-            <section className="flex flex-col gap-2">
-              <h2 className="font-medium text-sm">Estimator log</h2>
+            <Panel title="Estimator log">
               <RunLog runId={runId} />
-            </section>
+            </Panel>
           ) : null}
         </div>
       </main>

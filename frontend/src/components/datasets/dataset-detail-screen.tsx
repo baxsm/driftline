@@ -8,6 +8,7 @@ import RunConfigForm from "@/components/runs/run-config-form";
 import RunList from "@/components/runs/run-list";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
+import Panel from "@/components/ui/panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import TrajectoryViewer from "@/components/viewer/trajectory-viewer";
 import { ApiError, api } from "@/lib/api";
@@ -170,7 +171,7 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
               <span className="truncate font-mono text-muted-foreground text-xs">{path}</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4 rounded-xl border border-border bg-card/40 px-4 py-3.5 sm:grid-cols-4">
               <Stat
                 label="Frames"
                 value={formatCount(frame_count)}
@@ -191,18 +192,18 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
           </section>
 
           {/* the reserved height is for a drawn path; an empty state sizes to its own text */}
-          <section className={`flex flex-col gap-2 ${has_ground_truth ? "min-h-[380px]" : ""}`}>
-            <div className="flex items-baseline justify-between gap-4">
-              <h2 className="font-medium text-sm">Ground truth path</h2>
-              {truth && truth.poses.length > 0 ? (
-                <span className="text-muted-foreground text-xs">
-                  {formatCount(truth.poses.length)} of {formatCount(truth.total)} poses drawn, every{" "}
-                  {VIEWER_STRIDE}th
-                </span>
-              ) : null}
-            </div>
+          <Panel
+            title="Ground truth path"
+            aside={
+              truth && truth.poses.length > 0
+                ? `${formatCount(truth.poses.length)} of ${formatCount(truth.total)} poses drawn, every ${VIEWER_STRIDE}th`
+                : undefined
+            }
+            className={has_ground_truth ? "min-h-[min(620px,calc(100svh-9rem))]" : ""}
+            bodyClassName="flex min-h-0 flex-1 flex-col p-0"
+          >
             {has_ground_truth && truth === null ? (
-              <Skeleton className="min-h-[320px] flex-1 rounded-lg" />
+              <Skeleton className="min-h-[320px] flex-1 rounded-none" />
             ) : (
               <TrajectoryViewer
                 paths={[
@@ -220,10 +221,9 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
                 }
               />
             )}
-          </section>
+          </Panel>
 
-          <section className="flex flex-col gap-2">
-            <h2 className="font-medium text-sm">Runs</h2>
+          <Panel title="Runs" bodyClassName={runs && runs.length > 0 ? "p-0" : undefined}>
             {runsError ? (
               <ErrorState
                 title="Could not load runs"
@@ -245,12 +245,12 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
                 onDelete={handleDeleteRun}
                 pendingId={pendingRunId}
                 showDataset={false}
+                flat
               />
             )}
-          </section>
+          </Panel>
 
-          <section className="flex flex-col gap-2">
-            <h2 className="font-medium text-sm">Calibration</h2>
+          <Panel title="Calibration">
             {cameras.length === 0 && !calibration.imu ? (
               <EmptyState title="No calibration found">
                 <p>
@@ -262,7 +262,7 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
             ) : (
               <CalibrationPanel cameras={cameras} imu={calibration.imu} />
             )}
-          </section>
+          </Panel>
         </div>
       </main>
     </>

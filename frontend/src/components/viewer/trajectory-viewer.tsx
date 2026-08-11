@@ -106,6 +106,8 @@ interface Extent {
   longestAxis: number;
   /** Vertical size, used to drop the grid to the floor of the path rather than through it. */
   height: number;
+  /** The bounding box itself, which is what the camera frames against. */
+  size: THREE.Vector3;
 }
 
 function pathExtent(paths: TrajectoryPath[]): Extent {
@@ -123,6 +125,7 @@ function pathExtent(paths: TrajectoryPath[]): Extent {
     radius: Math.max(size.length() / 2, 0.5),
     longestAxis: Math.max(size.x, size.y, size.z),
     height: size.y,
+    size,
   };
 }
 
@@ -163,7 +166,7 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     mount.appendChild(renderer.domElement);
 
-    const { centre, radius, longestAxis, height } = pathExtent(drawable);
+    const { centre, radius, longestAxis, height, size } = pathExtent(drawable);
 
     // clip planes follow the path size so a small room and a long outdoor run both stay in
     // range without z fighting at one end or clipping at the other
@@ -179,8 +182,8 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({
     // `radius` is half the bounding box diagonal, which for a long thin path is about half
     // its length. Sizing the grid from the longest axis instead keeps it under the whole
     // path rather than under the middle third of it.
-    const gridSpan = Math.max(longestAxis, radius) * 1.2;
-    const grid = new THREE.GridHelper(gridSpan, 12, 0x3a3f47, 0x24282e);
+    const gridSpan = Math.max(longestAxis, radius) * 1.05;
+    const grid = new THREE.GridHelper(gridSpan, 12, 0x33383f, 0x21252a);
     grid.position.set(centre.x, centre.y - height / 2, centre.z);
     scene.add(grid);
 
@@ -214,19 +217,38 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({
     setMarker(markerMesh);
 
     function resetView() {
-      // distance is derived from the vertical field of view so the path fills the frame at
-      // any scale, rather than from a fixed multiplier that only suits one sequence size
-      const fitDistance = radius / Math.tan((camera.fov * Math.PI) / 360);
-      const distance = fitDistance * 1.15;
+      /**
+       * Distance is derived from the field of view so the path fills the frame at any scale,
+       * rather than from a fixed multiplier that only suits one sequence size.
+       *
+       * Both axes are checked. The viewer is a wide box, so a path that is wider than it is
+       * tall is bounded by the horizontal field of view, and fitting only the vertical one
+       * framed those runs far too loosely. `camera.fov` is vertical, so the horizontal limit
+       * has to be divided by the aspect ratio before the two are compared.
+       *
+       * The aspect matters here: `resize` is what learns the element's real shape, so a reset
+       * that runs before it would fit against a square that the viewer never is.
+       */
+      const halfFov = (camera.fov * Math.PI) / 360;
+      const aspect = camera.aspect || 1;
+
+      // framed by what the camera sees of the path rather than by its bounding sphere. A room
+      // trajectory is wide and flat, so half its 3D diagonal is much larger than its
+      // silhouette and fitting the sphere left it small in the middle of the frame. A path
+      // that never moved has no extent to measure, so it falls back to the sphere.
+      const viewRadius =
+        Math.max(
+          Math.hypot(size.x, size.z) / 2,
+          Math.hypot(Math.max(size.x, size.z), size.y) / 2,
+        ) || radius;
+      const vertical = viewRadius / Math.tan(halfFov);
+      const horizontal = viewRadius / (Math.tan(halfFov) * aspect);
+      const distance = Math.max(vertical, horizontal) * 1.05;
       const diagonal = distance / Math.sqrt(2.25);
       camera.position.set(centre.x + diagonal, centre.y + distance * 0.5, centre.z + diagonal);
       controls.target.copy(centre);
       controls.update();
     }
-    resetView();
-    resetRef.current = resetView;
-    setReady(true);
-
     function resize() {
       const { clientWidth, clientHeight } = mount as HTMLDivElement;
       if (clientWidth === 0 || clientHeight === 0) return;
@@ -234,7 +256,13 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({
       camera.aspect = clientWidth / clientHeight;
       camera.updateProjectionMatrix();
     }
+
+    // sized before the first fit, because `resetView` frames against the aspect ratio and the
+    // camera is square until this has read the element
     resize();
+    resetView();
+    resetRef.current = resetView;
+    setReady(true);
 
     const observer = new ResizeObserver(resize);
     observer.observe(mount);

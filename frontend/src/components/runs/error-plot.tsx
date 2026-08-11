@@ -98,11 +98,21 @@ const ErrorPlot: FC<ErrorPlotProps> = ({ errors, selected, onSelect, kind }) => 
 
   const format = kind === "translation" ? formatMetres : formatDegrees;
   const label = kind === "translation" ? "Position error" : "Rotation error";
+  // position keeps the magnitude ramp's hot end; rotation is a different quantity, not a
+  // hotter reading of the same one, so it sits off that ramp
+  const seriesColor = kind === "translation" ? "var(--error-high)" : "var(--error-rot)";
 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-baseline justify-between gap-4">
-        <span className="text-muted-foreground text-xs">{label}</span>
+        <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
+          <span
+            aria-hidden
+            className="h-0.5 w-3 shrink-0 rounded-full"
+            style={{ background: seriesColor }}
+          />
+          {label}
+        </span>
         <span className="font-mono text-muted-foreground text-xs tabular-nums">
           {activeValue !== undefined
             ? format(activeValue)
@@ -129,11 +139,11 @@ const ErrorPlot: FC<ErrorPlotProps> = ({ errors, selected, onSelect, kind }) => 
         }}
       >
         <title>{label} over the run</title>
-        <path d={area} fill="var(--error-high)" fillOpacity={0.12} />
+        <path d={area} fill={seriesColor} fillOpacity={0.12} />
         <path
           d={path}
           fill="none"
-          stroke="var(--error-high)"
+          stroke={seriesColor}
           strokeWidth={2}
           vectorEffect="non-scaling-stroke"
         />

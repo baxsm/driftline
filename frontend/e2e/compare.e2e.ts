@@ -26,10 +26,11 @@ test.describe("compare", () => {
     await page.getByLabel("Label").fill("cmp second");
     await page.getByLabel("Max features").fill("400");
     await page.getByRole("button", { name: "Queue run" }).click();
+    // the score cell is what settles when a run stops, since a finished row carries no badge
     await page
       .getByRole("listitem")
       .filter({ hasText: "cmp second" })
-      .getByText("Done")
+      .getByText(/ATE|not scored/)
       .waitFor({ timeout: 60_000 });
   }
 

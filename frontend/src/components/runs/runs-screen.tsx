@@ -28,6 +28,13 @@ const STATUSES: { value: RunStatus | "all"; label: string }[] = [
   { value: "failed", label: "Failed" },
 ];
 
+/**
+ * One option in a segmented control.
+ *
+ * The unselected options used to be bare text on the page background, which read as labels
+ * rather than as things that could be pressed. The group now sits in its own track, so the
+ * whole control is visible before anything is hovered.
+ */
 const Toggle: FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({
   active,
   onClick,
@@ -37,14 +44,22 @@ const Toggle: FC<{ active: boolean; onClick: () => void; children: React.ReactNo
     type="button"
     onClick={onClick}
     aria-pressed={active}
-    className={`cursor-pointer rounded-md px-2.5 py-1 text-xs transition-colors ${
+    className={`cursor-pointer rounded-md px-2.5 py-1 text-xs transition-colors duration-(--motion-quick) ${
       active
-        ? "bg-foreground text-background"
-        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+        ? "bg-foreground font-medium text-background"
+        : "text-muted-foreground hover:bg-background/70 hover:text-foreground"
     }`}
   >
     {children}
   </button>
+);
+
+/** Holds a Toggle group, with the label sitting inside the same track as its options. */
+const ToggleGroup: FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/30 p-0.5">
+    <span className="px-1.5 text-muted-foreground text-xs">{label}</span>
+    {children}
+  </div>
 );
 
 const RunsScreen: FC = () => {
@@ -143,9 +158,8 @@ const RunsScreen: FC = () => {
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
           {rows.length > 0 || status !== "all" ? (
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-1">
-                  <span className="mr-1 text-muted-foreground text-xs">Sort</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <ToggleGroup label="Sort">
                   {SORTS.map((option) => (
                     <Toggle
                       key={option.value}
@@ -155,9 +169,8 @@ const RunsScreen: FC = () => {
                       {option.label}
                     </Toggle>
                   ))}
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="mr-1 text-muted-foreground text-xs">Status</span>
+                </ToggleGroup>
+                <ToggleGroup label="Status">
                   {STATUSES.map((option) => (
                     <Toggle
                       key={option.value}
@@ -167,7 +180,7 @@ const RunsScreen: FC = () => {
                       {option.label}
                     </Toggle>
                   ))}
-                </div>
+                </ToggleGroup>
               </div>
 
               <div className="flex items-center gap-3">

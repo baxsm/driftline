@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, Loader2, Trash2 } from "lucide-react";
 import Link from "next/link";
 import type { FC } from "react";
 import RunStatusBadge from "@/components/runs/run-status-badge";
@@ -13,6 +14,7 @@ import {
   shortHash,
 } from "@/lib/format";
 import type { RunSummary } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 interface RunListProps {
   runs: RunSummary[];
@@ -28,6 +30,11 @@ interface RunListProps {
   onToggle?: (id: string) => void;
   /** Ids that cannot join the current selection, with the reason shown on the control. */
   disabledReason?: (run: RunSummary) => string | null;
+  /**
+   * Drops the list's own border for the case where a Panel already draws one. Panels never
+   * nest, and neither do the surfaces inside them.
+   */
+  flat?: boolean;
 }
 
 const RunList: FC<RunListProps> = ({
@@ -38,8 +45,15 @@ const RunList: FC<RunListProps> = ({
   selected,
   onToggle,
   disabledReason,
+  flat = false,
 }) => (
-  <ul data-testid="run-list" className="divide-y divide-border rounded-lg border border-border">
+  <ul
+    data-testid="run-list"
+    className={cn(
+      "animate-rise-in divide-y divide-border",
+      !flat && "overflow-hidden rounded-xl border border-border bg-card/40",
+    )}
+  >
     {runs.map((run) => {
       const { id, label, status, config_hash, processed_frames, total_frames } = run;
       const { dataset_name, created_at, failure_reason, ate_rmse, alignment } = run;
@@ -48,7 +62,13 @@ const RunList: FC<RunListProps> = ({
       const blocked = disabledReason?.(run) ?? null;
 
       return (
-        <li key={id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
+        // a picked row is marked on the row itself rather than only in the checkbox, so the
+        // pair being compared is legible without reading every control
+        <li
+          key={id}
+          data-selected={isSelected || undefined}
+          className="flex flex-col gap-3 px-4 py-3 transition-colors duration-(--motion-quick) hover:bg-muted/40 data-selected:bg-muted/60 sm:flex-row sm:items-center sm:gap-4"
+        >
           {onToggle ? (
             <label
               className={`flex shrink-0 items-center gap-2 text-xs ${
@@ -58,14 +78,29 @@ const RunList: FC<RunListProps> = ({
               }`}
               title={blocked ?? undefined}
             >
-              <input
-                type="checkbox"
-                checked={isSelected}
-                disabled={Boolean(blocked) && !isSelected}
-                onChange={() => onToggle(id)}
-                aria-label={`Select ${label ?? `run ${shortHash(id)}`} to compare`}
-                className="size-4 cursor-pointer accent-[var(--estimate-path)] disabled:cursor-not-allowed"
-              />
+              {/*
+                the native control keeps its own size and sits on top of the box that is
+                drawn for it, rather than being collapsed with `sr-only`. A zero sized input
+                cannot be clicked directly, only through its label, which breaks anything
+                aiming at the control itself. `opacity-0` hides the browser's own rendering
+                while leaving the hit area, focus and the accessible name intact.
+              */}
+              <span className="relative flex size-4 shrink-0 items-center justify-center">
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  disabled={Boolean(blocked) && !isSelected}
+                  onChange={() => onToggle(id)}
+                  aria-label={`Select ${label ?? `run ${shortHash(id)}`} to compare`}
+                  className="peer absolute inset-0 z-10 m-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                />
+                <span
+                  aria-hidden
+                  className="pointer-events-none flex size-4 items-center justify-center rounded-[5px] border border-border bg-background text-background transition-colors duration-(--motion-quick) peer-checked:border-foreground peer-checked:bg-foreground peer-focus-visible:ring-3 peer-focus-visible:ring-ring/50 peer-disabled:opacity-40 [&>svg]:opacity-0 peer-checked:[&>svg]:opacity-100"
+                >
+                  <Check className="size-3 transition-opacity duration-(--motion-quick)" />
+                </span>
+              </span>
               <span className="sm:hidden">Compare</span>
             </label>
           ) : null}
@@ -124,14 +159,25 @@ const RunList: FC<RunListProps> = ({
             )}
           </div>
 
+          {/*
+            destructive and icon only, because the row already carries four pieces of text and
+            a fifth reading "Delete" competed with the score for attention. The label stays for
+            assistive technology and on hover.
+          */}
           <div className="flex shrink-0 items-center justify-end gap-3">
             <Button
-              variant="ghost"
-              size="sm"
+              variant="destructive"
+              size="icon-sm"
               onClick={() => onDelete(run)}
               disabled={pendingId === id}
+              aria-label={`Delete ${label ?? `run ${shortHash(id)}`}`}
+              title="Delete this run"
             >
-              {pendingId === id ? "Deleting" : "Delete"}
+              {pendingId === id ? (
+                <Loader2 className="animate-spin" aria-hidden />
+              ) : (
+                <Trash2 aria-hidden />
+              )}
             </Button>
           </div>
         </li>
