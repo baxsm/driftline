@@ -6,7 +6,11 @@ import { hideDevIndicator } from "./helpers";
  * synthetic sequences the rest of the suite builds. It asserts on the real numbers before it
  * captures, so a screenshot can never show a screen that failed to load its data.
  *
- * Staged by scripts/stage-readme-demo.py.
+ * Staged by scripts/stage-readme-demo.py and run on its own with `npm run readme:shots`.
+ *
+ * Deliberately not a `.e2e.ts` file. The suite registers and unregisters sequences as it
+ * goes, and unregistering cascades to every run scored against the sequence, so running
+ * these alongside it draws the figures from an account the suite has just emptied.
  *
  * Nothing here captures with `fullPage`. A full page capture resizes the page to its whole
  * scroll height, and the trajectory canvas does not refit to that: the path renders against
