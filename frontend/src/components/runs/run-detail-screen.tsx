@@ -1,8 +1,9 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { Database } from "lucide-react";
 import Link from "next/link";
-import { type FC, useCallback, useEffect, useMemo, useState } from "react";
+import { type FC, useEffect, useMemo, useState } from "react";
 import AppTopbar from "@/components/app-topbar";
 import ErrorInspector from "@/components/runs/error-inspector";
 import MetricsPanel from "@/components/runs/metrics-panel";
@@ -14,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import Panel from "@/components/ui/panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import TrajectoryViewer, { type TrajectoryPath } from "@/components/viewer/trajectory-viewer";
-import { ApiError, api } from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import {
   formatCount,
   formatMetres,
@@ -22,15 +23,16 @@ import {
   shortHash,
   truthWindowQuery,
 } from "@/lib/format";
-import type {
-  GroundTruthResponse,
-  MetricsResponse,
-  Pose,
-  PoseErrorsResponse,
-  Run,
-  RunProgress,
-  TrajectoryResponse,
-} from "@/lib/types";
+import {
+  isInFlight,
+  keys,
+  useGroundTruth,
+  useMetrics,
+  usePoseErrors,
+  useRun,
+  useTrajectory,
+} from "@/lib/queries";
+import type { Run, RunProgress } from "@/lib/types";
 
 const ESTIMATE_FALLBACK = "#8b7fe8";
 const TRUTH_FALLBACK = "#b9bec7";
@@ -47,18 +49,36 @@ const Stat: FC<{ label: string; value: string; hint?: string }> = ({ label, valu
 );
 
 const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
-  const [run, setRun] = useState<Run | null>(null);
-  const [trajectory, setTrajectory] = useState<TrajectoryResponse | null>(null);
-  const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
-  const [errors, setErrors] = useState<PoseErrorsResponse | null>(null);
-  const [truth, setTruth] = useState<GroundTruthResponse | null>(null);
   const [selectedPose, setSelectedPose] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [streaming, setStreaming] = useState(false);
-  // captured when the stream opens rather than read from `run` inside the handler, which would
-  // be a stale closure over whatever the run was when the listener was created
-  const [streamingDatasetId, setStreamingDatasetId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const runQuery = useRun(runId);
+  const run = runQuery.data ?? null;
+  const settled = run ? !isInFlight(run.status) : false;
+
+  /*
+   * The stream opens for a run that is still going and closes itself when the run stops.
+   * Derived from the loaded status rather than set alongside it, so there is nothing to keep
+   * in step: a run that was already finished when the page opened never opens a stream.
+   */
+  const [streamClosed, setStreamClosed] = useState(false);
+  const streaming = Boolean(run) && isInFlight(run?.status) && !streamClosed;
+
+  /*
+   * The scores decide what the viewer draws, so everything downstream waits on them rather
+   * than racing. A scored run gets the aligned estimate overlaid on truth, which is the only
+   * overlay that means anything: unaligned, the two sit in different frames at different
+   * scales. An unscored run gets the raw estimate on its own, and says so.
+   */
+  const metricsQuery = useMetrics(runId, settled);
+  const aligned = Boolean(metricsQuery.data?.metrics);
+  const scoringKnown = settled && !metricsQuery.isPending;
+
+  const trajectoryQuery = useTrajectory(runId, aligned, scoringKnown);
+  const errorsQuery = usePoseErrors(runId, scoringKnown && aligned);
+
+  const metrics = metricsQuery.data ?? null;
+  const trajectory = trajectoryQuery.data ?? null;
 
   /**
    * Ground truth for the overlay, decimated and limited to the span the run covered.
@@ -72,88 +92,38 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
    * puts the estimate inside a tangle of path it never saw and reads as if it had followed
    * the lot.
    */
-  const loadTruth = useCallback(async (datasetId: string, poses: Pose[]) => {
-    try {
-      const loaded = await api.get<GroundTruthResponse>(
-        `/api/datasets/${datasetId}/ground-truth?stride=${TRUTH_STRIDE}${truthWindowQuery(poses)}`,
-      );
-      setTruth(loaded.has_ground_truth && loaded.poses.length > 0 ? loaded : null);
-    } catch {
-      setTruth(null);
-    }
-  }, []);
+  const truthWindow = useMemo(() => {
+    const poses = trajectory?.poses;
+    if (!aligned || !poses?.length) return undefined;
+    const query = truthWindowQuery(poses);
+    const from = query.match(/from=(\d+)/)?.[1];
+    const to = query.match(/to=(\d+)/)?.[1];
+    return from && to ? { from, to } : undefined;
+  }, [aligned, trajectory]);
+
+  const truthQuery = useGroundTruth(
+    aligned && trajectory?.poses.length ? run?.dataset_id : undefined,
+    TRUTH_STRIDE,
+    truthWindow,
+  );
+  const truthData = truthQuery.data;
+  const truth = truthData?.has_ground_truth && truthData.poses.length > 0 ? truthData : null;
+
+  const poseErrors = errorsQuery.data?.errors ?? [];
 
   /**
-   * Load the scores first, because they decide what the viewer should draw.
+   * Whether the results are still arriving.
    *
-   * A scored run gets the aligned estimate overlaid on truth, which is the only overlay that
-   * means anything: unaligned, the two sit in different frames at different scales. An
-   * unscored run gets the raw estimate on its own, and says so.
+   * This is what the viewer reads instead of "no poses". A finished run whose trajectory has
+   * not landed yet is loading, not empty, and rendering the empty state in that gap told the
+   * reader the estimator produced nothing on a run that had produced thousands of poses.
    */
-  const loadResults = useCallback(
-    async (datasetId: string) => {
-      let scored: MetricsResponse | null = null;
-      try {
-        scored = await api.get<MetricsResponse>(`/api/runs/${runId}/metrics`);
-        setMetrics(scored);
-      } catch {
-        setMetrics(null);
-      }
-
-      const aligned = Boolean(scored?.metrics);
-      let estimated: TrajectoryResponse | null = null;
-      try {
-        estimated = await api.get<TrajectoryResponse>(
-          `/api/runs/${runId}/trajectory${aligned ? "?aligned=true" : ""}`,
-        );
-        setTrajectory(estimated);
-      } catch {
-        setTrajectory(null);
-      }
-
-      if (!aligned) {
-        setErrors(null);
-        setTruth(null);
-        return;
-      }
-
-      // truth is fetched after the estimate, because the span the estimate covers is what
-      // decides how much of truth is worth drawing
-      if (estimated?.poses.length) void loadTruth(datasetId, estimated.poses);
-
-      try {
-        setErrors(await api.get<PoseErrorsResponse>(`/api/runs/${runId}/errors`));
-      } catch {
-        setErrors(null);
-      }
-    },
-    [runId, loadTruth],
-  );
-
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const found = await api.get<Run>(`/api/runs/${runId}`);
-      setRun(found);
-      setLoading(false);
-      if (found.status === "done" || found.status === "failed") {
-        await loadResults(found.dataset_id);
-      } else {
-        setStreamingDatasetId(found.dataset_id);
-        setStreaming(true);
-      }
-    } catch (caught) {
-      setRun(null);
-      setError(caught instanceof ApiError ? caught.message : "Could not load this run.");
-      setLoading(false);
-    }
-  }, [runId, loadResults]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const poseErrors = errors?.errors ?? [];
+  const resultsPending =
+    settled &&
+    (metricsQuery.isPending ||
+      trajectoryQuery.isPending ||
+      (aligned && errorsQuery.isPending) ||
+      (aligned && Boolean(trajectory?.poses.length) && truthQuery.isPending));
 
   /**
    * The paths the viewer draws.
@@ -207,7 +177,7 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
    * stale run, and the effect does not re-run on every progress event.
    */
   useEffect(() => {
-    if (!streaming || !streamingDatasetId) return;
+    if (!streaming) return;
 
     const source = new EventSource(`/api/runs/${runId}/events`, {
       withCredentials: true,
@@ -215,7 +185,12 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
 
     source.onmessage = (event) => {
       const progress = JSON.parse(event.data) as RunProgress;
-      setRun((current) =>
+      /*
+       * Progress is written straight into the cache rather than into a second copy of the run
+       * held in state. Two sources of truth for the same row is how a page ends up showing a
+       * frame count from the stream next to a status from the last fetch.
+       */
+      queryClient.setQueryData<Run>(keys.run(runId), (current) =>
         current
           ? {
               ...current,
@@ -230,19 +205,21 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
 
       if (progress.status === "done" || progress.status === "failed") {
         source.close();
-        setStreaming(false);
-        void loadResults(streamingDatasetId);
+        setStreamClosed(true);
+        // the run is finished, so the result queries switch on and fetch for the first time
+        void queryClient.invalidateQueries({ queryKey: keys.run(runId) });
+        void queryClient.invalidateQueries({ queryKey: ["runs"] });
       }
     };
 
     source.onerror = () => source.close();
     return () => source.close();
-  }, [runId, streaming, streamingDatasetId, loadResults]);
+  }, [runId, streaming, queryClient]);
 
-  if (loading) {
+  if (runQuery.isPending) {
     return (
       <>
-        <AppTopbar title="Run" />
+        <AppTopbar title="Run" parent={{ href: "/app/runs", label: "Runs" }} />
         <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
           <div className="mx-auto w-full max-w-6xl">
             <LoadingRows rows={4} />
@@ -252,16 +229,17 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
     );
   }
 
-  if (error || !run) {
+  if (runQuery.isError || !run) {
+    const failure = runQuery.error;
     return (
       <>
-        <AppTopbar title="Run" />
+        <AppTopbar title="Run" parent={{ href: "/app/runs", label: "Runs" }} />
         <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
           <div className="mx-auto w-full max-w-6xl">
             <ErrorState
               title="Could not load this run"
-              message={error ?? "That run does not exist."}
-              onRetry={() => void load()}
+              message={failure instanceof ApiError ? failure.message : "That run does not exist."}
+              onRetry={() => void runQuery.refetch()}
             />
           </div>
         </main>
@@ -276,7 +254,10 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
 
   return (
     <>
-      <AppTopbar title={label ?? `Run ${shortHash(run.id)}`} />
+      <AppTopbar
+        title={label ?? `Run ${shortHash(run.id)}`}
+        parent={{ href: "/app/runs", label: "Runs" }}
+      />
 
       <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
@@ -380,13 +361,18 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
                   : "Metres, measured by the IMU rather than fitted to truth"
             }
             className={
-              inFlight || (trajectory?.poses.length ?? 0) > 0
+              inFlight || resultsPending || (trajectory?.poses.length ?? 0) > 0
                 ? "min-h-[min(620px,calc(100svh-9rem))]"
                 : ""
             }
             bodyClassName="flex min-h-0 flex-1 flex-col p-0"
           >
-            {inFlight ? (
+            {/*
+              A run whose results are still arriving is loading, not empty. Falling through to
+              the viewer here rendered "this run produced no poses" on a finished run that had
+              produced thousands, for as long as the fetches took.
+            */}
+            {inFlight || resultsPending ? (
               <Skeleton className="min-h-[320px] flex-1 rounded-none" />
             ) : (
               <TrajectoryViewer

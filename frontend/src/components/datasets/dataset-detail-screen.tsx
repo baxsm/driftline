@@ -1,9 +1,10 @@
 "use client";
 
-import { type FC, useCallback, useEffect, useState } from "react";
+import { type FC, useState } from "react";
 import { toast } from "sonner";
 import AppTopbar from "@/components/app-topbar";
 import CalibrationPanel from "@/components/datasets/calibration-panel";
+import SequencePath from "@/components/datasets/sequence-path";
 import RunConfigForm from "@/components/runs/run-config-form";
 import RunList from "@/components/runs/run-list";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states";
@@ -13,7 +14,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import TrajectoryViewer from "@/components/viewer/trajectory-viewer";
 import { ApiError, api } from "@/lib/api";
 import { formatCount, formatDuration, formatRate, SOURCE_LABELS } from "@/lib/format";
-import type { Dataset, EstimatorConfig, GroundTruthResponse, Run, RunSummary } from "@/lib/types";
+import { useDataset, useGroundTruth, useInvalidateRuns, useRuns } from "@/lib/queries";
+import type { EstimatorConfig, Run, RunSummary } from "@/lib/types";
 
 /** 120Hz truth is far more than a line needs, so the viewer asks for every 4th pose. */
 const VIEWER_STRIDE = 4;
@@ -26,73 +28,28 @@ const Stat: FC<{ label: string; value: string; hint?: string }> = ({ label, valu
   </div>
 );
 
-/** Queued and running rows go stale on their own, so the list refreshes while any are live. */
-const RUNS_REFRESH_MS = 2000;
-
 const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
-  const [dataset, setDataset] = useState<Dataset | null>(null);
-  const [truth, setTruth] = useState<GroundTruthResponse | null>(null);
-  const [runs, setRuns] = useState<RunSummary[] | null>(null);
-  const [runsError, setRunsError] = useState<string | null>(null);
   const [pendingRunId, setPendingRunId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const invalidateRuns = useInvalidateRuns();
 
   /**
-   * The calibration and counts render as soon as the dataset row arrives. Fetching the
-   * thousands of truth poses afterwards would hold the whole page on a skeleton, so the
-   * trajectory loads on its own and the viewer shows its own pending state.
+   * The calibration and counts render as soon as the dataset row arrives. The thousands of
+   * truth poses are a separate query, so they never hold the rest of the page on a skeleton,
+   * and the viewer shows its own pending state until they land.
    */
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setTruth(null);
-    try {
-      const found = await api.get<Dataset>(`/api/datasets/${datasetId}`);
-      setDataset(found);
-      setLoading(false);
+  const datasetQuery = useDataset(datasetId);
+  const dataset = datasetQuery.data ?? null;
 
-      if (found.has_ground_truth) {
-        const loaded = await api.get<GroundTruthResponse>(
-          `/api/datasets/${datasetId}/ground-truth?stride=${VIEWER_STRIDE}`,
-        );
-        setTruth(loaded);
-      } else {
-        setTruth({ poses: [], stride: VIEWER_STRIDE, total: 0, has_ground_truth: false });
-      }
-    } catch (caught) {
-      setDataset(null);
-      setError(caught instanceof ApiError ? caught.message : "Could not load this sequence.");
-      setLoading(false);
-    }
-  }, [datasetId]);
+  const truthQuery = useGroundTruth(
+    dataset?.has_ground_truth ? datasetId : undefined,
+    VIEWER_STRIDE,
+  );
+  const truth = dataset?.has_ground_truth
+    ? (truthQuery.data ?? null)
+    : { poses: [], stride: VIEWER_STRIDE, total: 0, has_ground_truth: false };
 
-  const loadRuns = useCallback(async () => {
-    setRunsError(null);
-    try {
-      const { runs: rows } = await api.get<{ runs: RunSummary[]; total: number }>(
-        `/api/runs?dataset_id=${datasetId}`,
-      );
-      setRuns(rows);
-    } catch (caught) {
-      setRuns(null);
-      setRunsError(
-        caught instanceof ApiError ? caught.message : "Could not load runs for this sequence.",
-      );
-    }
-  }, [datasetId]);
-
-  useEffect(() => {
-    void load();
-    void loadRuns();
-  }, [load, loadRuns]);
-
-  useEffect(() => {
-    const live = runs?.some((run) => run.status === "queued" || run.status === "running");
-    if (!live) return;
-    const timer = setInterval(() => void loadRuns(), RUNS_REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [runs, loadRuns]);
+  const runsQuery = useRuns({ datasetId });
+  const runs = runsQuery.data ?? null;
 
   async function handleQueue(config: EstimatorConfig, label: string) {
     const created = await api.post<Run>("/api/runs", {
@@ -100,7 +57,7 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
       config,
       ...(label ? { label } : {}),
     });
-    await loadRuns();
+    invalidateRuns();
     toast.success("Run queued", {
       description: `${formatCount(created.total_frames)} frames to estimate.`,
     });
@@ -110,7 +67,7 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
     setPendingRunId(run.id);
     try {
       await api.delete(`/api/runs/${run.id}`);
-      await loadRuns();
+      invalidateRuns();
       toast.success("Run deleted", { description: "Its poses and artifacts were removed." });
     } catch (caught) {
       toast.error(caught instanceof ApiError ? caught.message : "Could not delete that run.");
@@ -119,10 +76,10 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
     }
   }
 
-  if (loading) {
+  if (datasetQuery.isPending) {
     return (
       <>
-        <AppTopbar title="Sequence" />
+        <AppTopbar title="Sequence" parent={{ href: "/app/datasets", label: "Datasets" }} />
         <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
           <div className="mx-auto w-full max-w-6xl">
             <LoadingRows rows={4} />
@@ -132,16 +89,20 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
     );
   }
 
-  if (error || !dataset) {
+  if (datasetQuery.isError || !dataset) {
     return (
       <>
-        <AppTopbar title="Sequence" />
+        <AppTopbar title="Sequence" parent={{ href: "/app/datasets", label: "Datasets" }} />
         <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
           <div className="mx-auto w-full max-w-6xl">
             <ErrorState
               title="Could not load this sequence"
-              message={error ?? "That sequence does not exist."}
-              onRetry={() => void load()}
+              message={
+                datasetQuery.error instanceof ApiError
+                  ? datasetQuery.error.message
+                  : "That sequence does not exist."
+              }
+              onRetry={() => void datasetQuery.refetch()}
             />
           </div>
         </main>
@@ -157,6 +118,7 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
     <>
       <AppTopbar
         title={name}
+        parent={{ href: "/app/datasets", label: "Datasets" }}
         action={<RunConfigForm frameCount={frame_count} onQueue={handleQueue} />}
       />
 
@@ -168,10 +130,10 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
               {camera_model ? (
                 <span className="font-mono text-muted-foreground text-xs">{camera_model}</span>
               ) : null}
-              <span className="truncate font-mono text-muted-foreground text-xs">{path}</span>
+              <SequencePath path={path} />
             </div>
 
-            <div className="grid grid-cols-2 gap-x-6 gap-y-4 rounded-xl border border-border bg-card/40 px-4 py-3.5 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4 rounded-xl border border-border bg-surface-panel px-4 py-3.5 sm:grid-cols-4">
               <Stat
                 label="Frames"
                 value={formatCount(frame_count)}
@@ -224,13 +186,17 @@ const DatasetDetailScreen: FC<{ datasetId: string }> = ({ datasetId }) => {
           </Panel>
 
           <Panel title="Runs" bodyClassName={runs && runs.length > 0 ? "p-0" : undefined}>
-            {runsError ? (
+            {runsQuery.isError ? (
               <ErrorState
                 title="Could not load runs"
-                message={runsError}
-                onRetry={() => void loadRuns()}
+                message={
+                  runsQuery.error instanceof ApiError
+                    ? runsQuery.error.message
+                    : "Could not load runs for this sequence."
+                }
+                onRetry={() => void runsQuery.refetch()}
               />
-            ) : runs === null ? (
+            ) : runsQuery.isPending || runs === null ? (
               <LoadingRows rows={2} />
             ) : runs.length === 0 ? (
               <EmptyState title="No runs on this sequence">
