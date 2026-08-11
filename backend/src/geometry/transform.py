@@ -5,8 +5,8 @@ in another frame". `compose(a, b)` applies b in a's frame, so if a is the pose o
 at frame 1 in world and b is the motion from frame 1 to frame 2, the result is the pose of
 the camera at frame 2 in world.
 
-The direction matters more than usual in this project. OpenCV's `recoverPose` returns the
-rotation and translation that carry a point from the first camera's frame into the second
+The direction matters more than usual in this project. Decomposing an essential matrix yields
+the rotation and translation that carry a point from the first camera's frame into the second
 camera's frame, which is the inverse of how the camera itself moved. Feeding that straight
 into a trajectory silently produces a path that runs backwards, and it still looks like a
 plausible trajectory. `motion_from_relative_pose` does that inversion in one place so the
@@ -79,9 +79,9 @@ def interpolate(start: Transform, end: Transform, fraction: float) -> Transform:
 def motion_from_relative_pose(rotation: Array, translation: Array) -> Transform:
     """Turn an OpenCV relative pose into the camera's own motion.
 
-    `recoverPose` gives the transform taking a point from camera 1's frame to camera 2's
-    frame. The camera's movement between those frames is its inverse. Verified against a
-    synthetic scene: a camera translating along +x makes `recoverPose` return t = -x.
+    An essential matrix decomposition gives the transform taking a point from camera 1's
+    frame to camera 2's frame. The camera's movement between those frames is its inverse.
+    Verified against a synthetic scene: a camera translating along +x yields t = -x.
     """
     return invert(
         Transform(

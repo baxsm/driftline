@@ -63,7 +63,7 @@ def test_composing_a_loop_returns_to_the_origin():
 
 
 def test_motion_from_relative_pose_inverts_opencv_convention():
-    """A camera moving +x makes recoverPose report t = -x, and the motion must be +x.
+    """A camera moving +x decomposes to t = -x, and the motion must come back as +x.
 
     This is the sign error that produces a backwards trajectory that still looks plausible.
     """

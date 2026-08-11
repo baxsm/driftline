@@ -107,6 +107,42 @@ def straight_line_sequence(frames: int = 24, step: float = 0.25) -> SyntheticSeq
     return SyntheticSequence(images=images, poses=poses, camera_matrix=matrix, points=points)
 
 
+def distant_scene_correspondences(
+    depth: float, count: int = 400, baseline: float = 1.0
+) -> tuple[Array, Array, Array]:
+    """Two views of a point cloud `depth` unit baselines away, as exact projections.
+
+    Handheld room sequences are made of this geometry: the camera translates a few
+    centimetres between keyframes while the walls are metres off, so triangulated depth runs
+    to hundreds of baselines. That is the regime where OpenCV's own chirality counter breaks
+    down, and it cannot be reached with `straight_line_sequence`, whose step is deliberately
+    large against its scene depth.
+
+    Projected analytically rather than rendered and re-detected, so the correspondences carry
+    no detector noise and any failure is the geometry code's alone.
+    """
+    rng = np.random.default_rng(11)
+    spread = max(depth * 0.4, 1.0)
+    points = np.column_stack(
+        [
+            rng.uniform(-spread, spread, count),
+            rng.uniform(-spread, spread, count),
+            rng.uniform(depth * 0.9, depth * 1.1, count),
+        ]
+    )
+    matrix = camera_matrix()
+
+    first = (matrix @ points.T).T
+    # the camera slides along +x, so the points move by -baseline in its frame
+    shifted = points - np.array([baseline, 0.0, 0.0])
+    second = (matrix @ shifted.T).T
+    return (
+        np.asarray(first[:, :2] / first[:, 2:3], dtype=np.float64),
+        np.asarray(second[:, :2] / second[:, 2:3], dtype=np.float64),
+        matrix,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class InertialSequence:
     """A camera path with the IMU stream a real device would have recorded along it."""

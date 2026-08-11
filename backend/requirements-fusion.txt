@@ -6,9 +6,12 @@
 # This file therefore pins the newest set that does resolve alongside gtsam.
 #
 # The estimator's OpenCV calls were checked across the split rather than assumed compatible:
-# findEssentialMat, recoverPose, undistortPoints, fisheye.undistortPoints, goodFeaturesToTrack,
-# calcOpticalFlowPyrLK and createCLAHE all return identical results on 4.11 and 5.0 for the
-# same input. Re-run that check if either side moves.
+# findEssentialMat, decomposeEssentialMat, triangulatePoints, undistortPoints,
+# fisheye.undistortPoints, goodFeaturesToTrack, calcOpticalFlowPyrLK and createCLAHE all return
+# identical results on 4.11 and 5.0 for the same input. Re-run that check if either side moves.
+#
+# `recoverPose` is deliberately absent: it is not called any more, because its inlier count is
+# wrong on distant scenes on both versions. `motion.py` explains the measurement.
 fastapi==0.141.1
 uvicorn[standard]==0.52.1
 pydantic==2.13.4
