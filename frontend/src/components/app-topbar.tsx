@@ -1,6 +1,7 @@
 "use client";
 
-import { LogOut, Menu } from "lucide-react";
+import { ChevronLeft, LogOut, Menu } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FC, type ReactNode, useState } from "react";
 import { SidebarLinks } from "@/components/app-sidebar";
@@ -10,11 +11,17 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 
 interface AppTopbarProps {
   title: string;
+  /**
+   * Where this screen sits. A detail page reached from a list is otherwise a title with no
+   * way back and nothing saying what it belongs to, which is how a reader ends up on a run
+   * with no idea which sequence produced it.
+   */
+  parent?: { href: string; label: string };
   /** The primary action for the current screen, which is what this space is for. */
   action?: ReactNode;
 }
 
-const AppTopbar: FC<AppTopbarProps> = ({ title, action }) => {
+const AppTopbar: FC<AppTopbarProps> = ({ title, parent, action }) => {
   const { signOut } = useAuth();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -50,7 +57,23 @@ const AppTopbar: FC<AppTopbarProps> = ({ title, action }) => {
         </SheetContent>
       </Sheet>
 
-      <h1 className="min-w-0 flex-1 truncate font-medium text-sm">{title}</h1>
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        {parent ? (
+          <>
+            <Link
+              href={parent.href}
+              className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-muted-foreground text-sm transition-colors duration-(--motion-quick) hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              <ChevronLeft className="size-3.5" aria-hidden />
+              {parent.label}
+            </Link>
+            <span aria-hidden className="shrink-0 text-muted-foreground/50">
+              /
+            </span>
+          </>
+        ) : null}
+        <h1 className="min-w-0 truncate font-medium text-sm">{title}</h1>
+      </div>
 
       <div className="flex shrink-0 items-center gap-2">
         {action}

@@ -60,7 +60,12 @@ const RunLog: FC<{ runId: string }> = ({ runId }) => {
             This run wrote no log. Its artifacts were removed, or it never reached the worker.
           </p>
         ) : (
-          <pre className="max-h-80 overflow-auto rounded-lg border border-border bg-muted/10 px-4 py-3 font-mono text-xs leading-relaxed">
+          // No box of its own: the Panel above already draws the frame, and a rounded bordered
+          // block inside it was a box in a box. A rule and the page's own surface separate the
+          // log from the control that opened it, so it reads as output rather than as a card.
+          // wrapped rather than scrolled sideways: the config line is a long JSON blob, and a
+          // horizontal scrollbar hides the end of it behind a gesture nobody makes
+          <pre className="-mx-4 -mb-4 max-h-80 overflow-y-auto whitespace-pre-wrap break-words border-border border-t bg-surface-page px-4 py-3 font-mono text-muted-foreground text-xs leading-relaxed">
             {text}
           </pre>
         )

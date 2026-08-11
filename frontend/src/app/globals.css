@@ -23,6 +23,18 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-surface-page: var(--surface-page);
+  --color-surface-panel: var(--surface-panel);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-status-success: var(--status-success);
+  --color-status-success-bg: var(--status-success-bg);
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-bg: var(--status-warning-bg);
+  --color-status-danger: var(--status-danger);
+  --color-status-danger-bg: var(--status-danger-bg);
+  --color-status-info: var(--status-info);
+  --color-status-info-bg: var(--status-info-bg);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -49,6 +61,21 @@
 }
 
 :root {
+  /* the ladder inverts in light: surfaces sit slightly darker as they rise, not lighter */
+  --surface-page: oklch(1 0 0);
+  --surface-panel: oklch(0.99 0.002 275);
+  --surface-raised: oklch(0.97 0.003 275);
+  --surface-overlay: oklch(1 0 0);
+
+  --status-success: oklch(0.52 0.14 155);
+  --status-success-bg: oklch(0.94 0.04 155);
+  --status-warning: oklch(0.55 0.13 75);
+  --status-warning-bg: oklch(0.95 0.05 85);
+  --status-danger: oklch(0.55 0.20 25);
+  --status-danger-bg: oklch(0.95 0.03 25);
+  --status-info: oklch(0.52 0.16 275);
+  --status-info-bg: oklch(0.95 0.03 275);
+
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -82,27 +109,67 @@
   --motion-quick: 120ms;
   --motion-settle: 220ms;
   --motion-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  /*
+   * A decelerating curve for things arriving. It stops hard rather than easing out both
+   * ends, which is what makes a panel read as having landed rather than as having drifted in.
+   */
+  --motion-enter: cubic-bezier(0.165, 0.84, 0.44, 1);
+  /** One row's share of a staggered list. Past about eight rows a stagger reads as lag. */
+  --motion-stagger: 26ms;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
+  /*
+   * A surface ladder, not a set of boxes.
+   *
+   * Depth in dark comes from lightness steps: a surface that sits above another is lighter,
+   * because a dark shadow on a dark ground has nothing to contrast against. Every step here
+   * is about 0.03 in oklch lightness, which is the separation Radix and Linear both land on.
+   * Drawing a border around each level instead is what produced the box inside a box inside
+   * a box, so borders are now for the outermost edge and for controls, and the steps carry
+   * the rest.
+   *
+   * The greys are not neutral. A trace of the estimate's own hue (275) runs through them, so
+   * the chrome reads as chosen rather than as the default grey every dark theme ships with.
+   */
+  --surface-page: oklch(0.16 0.006 275);
+  --surface-panel: oklch(0.195 0.006 275);
+  --surface-raised: oklch(0.235 0.007 275);
+  --surface-overlay: oklch(0.265 0.008 275);
+
+  --background: var(--surface-page);
+  --foreground: oklch(0.97 0.004 275);
+  --card: var(--surface-panel);
+  --card-foreground: oklch(0.97 0.004 275);
+  --popover: var(--surface-overlay);
+  --popover-foreground: oklch(0.97 0.004 275);
   --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.2 0.006 275);
+  --secondary: var(--surface-raised);
+  --secondary-foreground: oklch(0.97 0.004 275);
+  --muted: var(--surface-raised);
+  --muted-foreground: oklch(0.70 0.012 275);
+  --accent: var(--surface-raised);
+  --accent-foreground: oklch(0.97 0.004 275);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
+  --border: oklch(1 0 0 / 9%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --ring: oklch(0.70 0.15 275);
+
+  /*
+   * Status, kept away from the trajectory hues so a badge is never mistaken for a reading.
+   * Each is a tinted surface with a light foreground, rather than a saturated fill, because
+   * a run list where every row shouts has no hierarchy left.
+   */
+  --status-success: oklch(0.78 0.15 155);
+  --status-success-bg: oklch(0.30 0.06 155 / 45%);
+  --status-warning: oklch(0.83 0.15 85);
+  --status-warning-bg: oklch(0.32 0.06 85 / 45%);
+  --status-danger: oklch(0.75 0.17 22);
+  --status-danger-bg: oklch(0.32 0.08 22 / 45%);
+  --status-info: oklch(0.76 0.13 275);
+  --status-info-bg: oklch(0.32 0.07 275 / 45%);
+
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -176,6 +243,8 @@
     *, *::before, *::after {
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
+      /* the delay has to go too, or a staggered list still waits its way down the page */
+      animation-delay: 0ms !important;
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
     }
@@ -199,8 +268,27 @@
   }
 
   .animate-rise-in {
-    animation: rise-in var(--motion-settle) var(--motion-ease) both;
+    animation: rise-in var(--motion-settle) var(--motion-enter) both;
   }
+
+  /*
+   * A staggered list. Each row starts a beat after the one above it, so a list reads as
+   * filling in rather than as appearing all at once.
+   *
+   * Capped at eight. Past that the last row waits long enough that the stagger stops looking
+   * deliberate and starts looking like the page is slow, which on a long run list it would
+   * be doing on every poll.
+   */
+  .stagger-rows > *:nth-child(-n + 8) {
+    animation: rise-in var(--motion-settle) var(--motion-enter) both;
+  }
+  .stagger-rows > *:nth-child(2) { animation-delay: calc(var(--motion-stagger) * 1); }
+  .stagger-rows > *:nth-child(3) { animation-delay: calc(var(--motion-stagger) * 2); }
+  .stagger-rows > *:nth-child(4) { animation-delay: calc(var(--motion-stagger) * 3); }
+  .stagger-rows > *:nth-child(5) { animation-delay: calc(var(--motion-stagger) * 4); }
+  .stagger-rows > *:nth-child(6) { animation-delay: calc(var(--motion-stagger) * 5); }
+  .stagger-rows > *:nth-child(7) { animation-delay: calc(var(--motion-stagger) * 6); }
+  .stagger-rows > *:nth-child(8) { animation-delay: calc(var(--motion-stagger) * 7); }
 
   /*
    * A run that is still going. The docs reserve colour for abnormal states, so a live run is

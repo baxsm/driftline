@@ -321,14 +321,14 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({
     // a viewer with nothing in it does not need viewer sized space. Keeping the full height
     // here pushes the rest of the page below the fold to say "there is nothing to draw".
     return (
-      <div className="flex items-center justify-center rounded-lg border border-border border-dashed bg-muted/10 px-6 py-10 text-center text-muted-foreground text-sm">
+      <div className="flex items-center justify-center px-6 py-10 text-center text-muted-foreground text-sm">
         {emptyMessage}
       </div>
     );
   }
 
   return (
-    <div className="relative min-h-[320px] flex-1 overflow-hidden rounded-lg border border-border bg-muted/10">
+    <div className="relative min-h-[320px] flex-1 overflow-hidden bg-surface-page/40">
       <div ref={mountRef} className="absolute inset-0" data-testid="viewer-canvas" />
       <div className="pointer-events-none absolute top-3 left-3 flex flex-col gap-1.5">
         {drawable.map((path) => (

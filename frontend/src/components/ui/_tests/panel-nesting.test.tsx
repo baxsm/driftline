@@ -38,7 +38,80 @@ describe("panel nesting", () => {
 
     expect(offenders).toEqual([]);
   });
+
+  /**
+   * A Panel already draws the only border that level needs. Anything given its own border
+   * and rounding inside one is the box in a box the rules forbid, and it does not have to be
+   * a Panel to look like one: a plain div with `rounded-xl border` reads exactly the same.
+   *
+   * Lists inside a panel separate their rows with dividers instead, which is why
+   * `divide-*` and a bare `border-t` are not matches here.
+   */
+  it("never draws a bordered rounded box inside a Panel", () => {
+    const offenders: string[] = [];
+
+    for (const file of files) {
+      if (file.endsWith(join("ui", "panel.tsx"))) continue;
+      const source = readFileSync(file, "utf8");
+
+      for (const region of panelBodies(source)) {
+        // a container that both rounds and borders itself is drawing its own frame
+        if (/rounded-(?:lg|xl|2xl)[^"'`]*\bborder\b(?!-0)/.test(region)) {
+          offenders.push(file);
+          break;
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * The same rule across files.
+   *
+   * A panel's body is often one component, so the box is drawn where the Panel is not: the
+   * estimator log rendered its own bordered block, and the `<Panel>` framing it lived on the
+   * run screen. Scanning inside `<Panel>` alone cannot see that, so every component used as a
+   * panel body is checked for a frame of its own at its top level.
+   */
+  it("never has a panel body component draw its own frame", () => {
+    const bodies = new Set<string>();
+    for (const file of files) {
+      for (const region of panelBodies(readFileSync(file, "utf8"))) {
+        for (const [, name] of region.matchAll(/<([A-Z][A-Za-z0-9]*)[\s/>]/g)) {
+          if (name !== "Panel") bodies.add(name);
+        }
+      }
+    }
+
+    const offenders = files.filter((file) => {
+      const name = file.split(/[/\\]/).pop()?.replace(".tsx", "") ?? "";
+      const component = name.replace(/(^|-)([a-z])/g, (_, __, c) => c.toUpperCase());
+      if (!bodies.has(component)) return false;
+      const source = readFileSync(file, "utf8");
+      // the outermost element of a panel body must not round and border itself
+      return /return \(\s*(?:\/\*[\s\S]*?\*\/\s*)?<\w[^>]*className="[^"]*rounded-(?:lg|xl|2xl)[^"]*\bborder\b(?!-0)/.test(
+        source,
+      );
+    });
+
+    expect(offenders).toEqual([]);
+  });
 });
+
+/** The source between each `<Panel ...>` and its matching `</Panel>`. */
+function panelBodies(source: string): string[] {
+  const bodies: string[] = [];
+  const opens = [...source.matchAll(/<Panel[\s>]/g)];
+
+  for (const open of opens) {
+    const start = open.index ?? 0;
+    const close = source.indexOf("</Panel>", start);
+    if (close === -1) continue;
+    bodies.push(source.slice(start, close));
+  }
+  return bodies;
+}
 
 /**
  * Two panels in one file are normal; a screen is a column of them. Only a `<Panel>` opened

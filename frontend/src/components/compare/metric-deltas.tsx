@@ -27,7 +27,7 @@ interface MetricDeltasProps {
 const MetricDeltas: FC<MetricDeltasProps> = ({ rows, labelA, labelB, alignmentA, alignmentB }) => {
   if (rows.length === 0) {
     return (
-      <div className="rounded-lg border border-border border-dashed bg-muted/10 px-4 py-3 text-muted-foreground text-sm">
+      <div className="px-1 py-2 text-muted-foreground text-sm">
         At least one of these runs was never scored, so there is nothing to compare. A run is scored
         only when its sequence has ground truth and enough of its poses line up with it.
       </div>

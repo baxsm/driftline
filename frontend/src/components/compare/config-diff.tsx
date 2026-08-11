@@ -21,7 +21,7 @@ interface ConfigDiffProps {
 const ConfigDiff: FC<ConfigDiffProps> = ({ rows, labelA, labelB }) => {
   if (rows.length === 0) {
     return (
-      <div className="rounded-lg border border-border border-dashed bg-muted/10 px-4 py-3 text-muted-foreground text-sm">
+      <div className="px-1 py-2 text-muted-foreground text-sm">
         These two runs used identical settings. Any difference in their scores came from something
         other than the config.
       </div>
@@ -30,7 +30,7 @@ const ConfigDiff: FC<ConfigDiffProps> = ({ rows, labelA, labelB }) => {
 
   return (
     // scrolls inside its own box rather than compressing, same reason as the scores table
-    <div className="overflow-x-auto rounded-lg border border-border">
+    <div className="overflow-x-auto">
       <table className="w-full min-w-[28rem] text-sm">
         <thead>
           <tr className="border-border border-b text-left text-muted-foreground text-xs">

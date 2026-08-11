@@ -26,7 +26,9 @@ const Panel: FC<PanelProps> = ({ title, aside, action, children, className, body
   <section
     data-slot="panel"
     className={cn(
-      "flex animate-rise-in flex-col overflow-hidden rounded-xl border border-border bg-card/40",
+      // one hairline and a surface step above the page. The step is what separates it; the
+      // border is the outer edge, and nothing inside a panel draws another one.
+      "flex animate-rise-in flex-col overflow-hidden rounded-xl border border-border bg-surface-panel",
       className,
     )}
   >

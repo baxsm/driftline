@@ -19,6 +19,13 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
+        // status variants: a tinted surface with a light foreground rather than a saturated
+        // fill, so several on one screen still leave a hierarchy
+        success: "bg-status-success-bg text-status-success",
+        warning: "bg-status-warning-bg text-status-warning",
+        danger: "bg-status-danger-bg text-status-danger",
+        info: "bg-status-info-bg text-status-info",
+        muted: "bg-muted text-muted-foreground",
       },
     },
     defaultVariants: {
