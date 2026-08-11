@@ -13,8 +13,30 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { ApiError } from "@/lib/api";
-import type { EstimatorConfig } from "@/lib/types";
+import type { EstimatorConfig, EstimatorMode } from "@/lib/types";
+
+interface ModeOption {
+  value: EstimatorMode;
+  title: string;
+  description: string;
+}
+
+export const MODES: ModeOption[] = [
+  {
+    value: "mono",
+    title: "Visual only",
+    description:
+      "Camera alone. The path has no absolute scale, so it is scored after a Sim(3) fit and distances are not metres.",
+  },
+  {
+    value: "mono_inertial",
+    title: "Visual inertial",
+    description:
+      "Camera fused with the IMU, which observes gravity and makes the estimate metric. Scored with SE(3), so scale error is real rather than fitted away.",
+  },
+];
 
 /**
  * The bounds are the server's, repeated here so a value out of range is caught before a run is
@@ -230,8 +252,7 @@ const RunConfigForm: FC<RunConfigFormProps> = ({ frameCount, onQueue }) => {
           <DialogHeader>
             <DialogTitle>Queue a run</DialogTitle>
             <DialogDescription>
-              Monocular visual odometry over cam0. The estimate drifts and has no absolute scale, so
-              it is scored against ground truth after a Sim(3) fit.
+              Odometry over cam0, scored against ground truth where the sequence ships it.
             </DialogDescription>
           </DialogHeader>
 
@@ -246,6 +267,35 @@ const RunConfigForm: FC<RunConfigFormProps> = ({ frameCount, onQueue }) => {
                 autoComplete="off"
               />
             </div>
+
+            <fieldset className="flex flex-col gap-3">
+              <legend className="font-medium text-sm">Estimator</legend>
+              <RadioGroup
+                value={config.mode}
+                onValueChange={(next) =>
+                  setConfig((current) => ({ ...current, mode: next as EstimatorMode }))
+                }
+                className="gap-3"
+              >
+                {MODES.map((option) => (
+                  <Label
+                    key={option.value}
+                    htmlFor={`mode-${option.value}`}
+                    className="flex cursor-pointer items-start gap-3 font-normal"
+                  >
+                    <RadioGroupItem
+                      value={option.value}
+                      id={`mode-${option.value}`}
+                      className="mt-0.5 cursor-pointer"
+                    />
+                    <span className="flex flex-col gap-0.5">
+                      <span className="font-medium text-sm">{option.title}</span>
+                      <span className="text-muted-foreground text-xs">{option.description}</span>
+                    </span>
+                  </Label>
+                ))}
+              </RadioGroup>
+            </fieldset>
 
             {CONFIG_GROUPS.map((group) => (
               <section key={group.title} className="flex flex-col gap-3">

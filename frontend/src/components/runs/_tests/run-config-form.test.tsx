@@ -78,13 +78,39 @@ describe("RunConfigForm", () => {
     expect(onQueue).toHaveBeenCalledWith(expect.anything(), "Tighter RANSAC");
   });
 
-  it("offers no control for anything this phase does not estimate", async () => {
-    // a knob that changes nothing is worse than no knob, so IMU and window settings arrive
-    // with the phases that use them
+  it("offers no control for anything the estimator does not read", async () => {
+    // a knob that changes nothing is worse than no knob. Fusion reads its noise figures from
+    // the sequence's own calibration and solves for gravity and bias itself, so none of those
+    // is a setting. Stereo is not offered at all because the second camera is unused.
     await openForm();
-    expect(screen.queryByLabelText(/imu/i)).toBeNull();
-    expect(screen.queryByLabelText(/sliding window/i)).toBeNull();
-    expect(screen.queryByLabelText(/gravity/i)).toBeNull();
+    // matched against the editable controls rather than any text, because the mode
+    // descriptions legitimately mention gravity while offering no setting for it
+    const labels = screen
+      .getAllByRole("textbox")
+      .concat(screen.getAllByRole("spinbutton"))
+      .map((input) => input.getAttribute("aria-label") ?? input.id);
+
+    for (const forbidden of ["imu", "noise", "gravity", "window", "stereo", "bias"]) {
+      expect(labels.some((name) => name.toLowerCase().includes(forbidden))).toBe(false);
+    }
+  });
+
+  it("offers both estimator modes and defaults to visual only", async () => {
+    await openForm();
+    const visual = screen.getByLabelText(/visual only/i);
+    const inertial = screen.getByLabelText(/visual inertial/i);
+    expect(visual).toBeChecked();
+    expect(inertial).not.toBeChecked();
+  });
+
+  it("queues an inertial run when that mode is picked", async () => {
+    const { onQueue } = await openForm();
+    await userEvent.click(screen.getByLabelText(/visual inertial/i));
+    await userEvent.click(screen.getByRole("button", { name: "Queue run" }));
+    expect(onQueue).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "mono_inertial" }),
+      expect.anything(),
+    );
   });
 
   it("passes the keyframe and range settings through", async () => {

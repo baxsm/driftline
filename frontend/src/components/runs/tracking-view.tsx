@@ -3,7 +3,7 @@
 import { Pause, Play } from "lucide-react";
 import { type FC, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { API_BASE, ApiError, api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { formatCount } from "@/lib/format";
 import type { TrackFrame, TracksResponse } from "@/lib/types";
 
@@ -128,7 +128,7 @@ const TrackingView: FC<TrackingViewProps> = ({ runId, frameCount }) => {
   useEffect(() => {
     const image = new Image();
     image.crossOrigin = "use-credentials";
-    image.src = `${API_BASE}/api/runs/${runId}/frames/${frameIndex}`;
+    image.src = `/api/runs/${runId}/frames/${frameIndex}`;
     imageRef.current = image;
     image.onload = paint;
     image.onerror = paint;

@@ -31,6 +31,17 @@ class Credentials(BaseModel):
 
 
 def _set_session_cookie(response: Response, user_id: str) -> None:
+    """Set the session cookie.
+
+    `samesite="lax"` is deliberate and it depends on the frontend proxying `/api/*` to this
+    service rather than the browser calling it directly. Under the proxy every request the
+    browser makes is first-party, so a lax cookie is always sent. Calling this API directly
+    from another origin would be cross-site, browsers withhold lax cookies there, and the app
+    would authenticate in development and silently fail once the two services were deployed to
+    different domains. The alternative, `SameSite=None`, would send the cookie on every
+    cross-site request including ones this app did not initiate, which is the thing SameSite
+    exists to prevent.
+    """
     response.set_cookie(
         SESSION_COOKIE,
         sign_session(user_id),

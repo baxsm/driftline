@@ -1,33 +1,26 @@
 """Integration checks against a real sequence on disk.
 
-Set `DRIFTLINE_TEST_SEQUENCE` to the folder holding `mav0` and `dso`. Skipped when unset so
-the suite still runs on a machine without the dataset, but these are the assertions that
-catch what fixtures cannot: real column layouts, real precision, and real rates.
+Reads `data/dataset-room1_512_16` from the repo, or wherever `DRIFTLINE_TEST_SEQUENCE` points.
+Skipped when there is no sequence on the machine, so the suite still runs without one, but
+these are the assertions that catch what fixtures cannot: real column layouts, real precision,
+and real rates.
 """
 
-import os
 from itertools import pairwise
 from pathlib import Path
 
 import pytest
 
+from datasets._tests.sequences import sequence_path
 from datasets.parsing import read_frame_timestamps, read_poses
 from datasets.reader import read_sequence
-
-SEQUENCE_ENV = "DRIFTLINE_TEST_SEQUENCE"
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(scope="module")
 def sequence_root() -> Path:
-    raw = os.getenv(SEQUENCE_ENV)
-    if not raw:
-        pytest.skip(f"{SEQUENCE_ENV} is not set")
-    root = Path(raw)
-    if not root.is_dir():
-        pytest.skip(f"{SEQUENCE_ENV} does not point at a directory: {root}")
-    return root
+    return sequence_path()
 
 
 def test_reports_ground_truth_present(sequence_root):

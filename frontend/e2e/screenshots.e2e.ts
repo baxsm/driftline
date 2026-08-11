@@ -17,7 +17,11 @@ test.beforeEach(async ({ page }) => {
   await hideDevIndicator(page);
 });
 
+// One case that walks every screen in order, so it needs far longer than a normal test: it
+// registers sequences, waits for real runs to finish, and settles between captures. The
+// per-test default would fail it on length rather than on anything being wrong.
 test("capture every meaningful state", async ({ page }) => {
+  test.setTimeout(240_000);
   await page.goto("/login");
   await page.waitForTimeout(SETTLE_MS);
   await page.screenshot({ path: `${DIR}/01-login.png`, fullPage: true });
@@ -61,6 +65,19 @@ test("capture every meaningful state", async ({ page }) => {
     await page.getByRole("button", { name: "New run" }).click();
     await page.waitForTimeout(SETTLE_MS);
     await page.screenshot({ path: `${DIR}/15-run-config.png`, fullPage: true });
+
+    // the mode choice is the phase 4 control, and the dialog is the one place the two
+    // estimators are described next to each other
+    await page.getByLabel(/visual inertial/i).click();
+    await page.waitForTimeout(SETTLE_MS);
+    await page.screenshot({ path: `${DIR}/15b-run-config-inertial.png`, fullPage: true });
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.waitForTimeout(SETTLE_MS);
+    await page.screenshot({ path: `${DIR}/15c-run-config-375.png`, fullPage: true });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForTimeout(SETTLE_MS);
+    await page.getByLabel(/visual only/i).click();
 
     await page.getByLabel("Max features").fill("5");
     await page.getByRole("button", { name: "Queue run" }).click();

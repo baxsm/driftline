@@ -15,7 +15,11 @@ from pydantic import BaseModel, ConfigDict, Field
 class EstimatorConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    mode: Literal["mono"] = "mono"
+    # `mono_inertial` fuses the IMU with the visual front end, which is what makes the
+    # estimate metric. It needs gtsam, which ships no Windows wheel, so it only runs in the
+    # container. `stereo` and `stereo_inertial` are not offered because the second camera is
+    # not used anywhere yet, and a mode that silently ignores it would be a fake control.
+    mode: Literal["mono", "mono_inertial"] = "mono"
     max_features: int = Field(ge=50, le=2000, default=600)
     # corner strength relative to the strongest corner in the frame. Lower finds more, and
     # weaker, corners. This replaced `fast_threshold`, which the pipeline never read: the

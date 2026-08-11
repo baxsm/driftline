@@ -122,6 +122,12 @@ class Pose(Base):
     qy: Mapped[float] = mapped_column(Float, nullable=False)
     qz: Mapped[float] = mapped_column(Float, nullable=False)
     tracked_features: Mapped[int | None] = mapped_column(Integer)
+    # Velocity in the world frame, m/s. Null on a visual-only run: a monocular camera has no
+    # scale and therefore no speed, so a zero here would be a fabricated measurement rather
+    # than a missing one. Only an inertial run populates these.
+    vx: Mapped[float | None] = mapped_column(Float)
+    vy: Mapped[float | None] = mapped_column(Float)
+    vz: Mapped[float | None] = mapped_column(Float)
 
     run: Mapped[Run] = relationship(back_populates="poses")
 

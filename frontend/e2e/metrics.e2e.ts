@@ -121,9 +121,10 @@ test.describe("metrics", () => {
     const runUrl = page.url();
     const runId = runUrl.split("/").pop();
 
-    const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    // through the app's own origin, the same path the browser uses, so this exercises the
+    // proxy rather than a route the running app never takes
     for (const kind of ["estimate", "truth"]) {
-      const response = await page.request.get(`${base}/api/runs/${runId}/export?kind=${kind}`);
+      const response = await page.request.get(`/api/runs/${runId}/export?kind=${kind}`);
       expect(response.status()).toBe(200);
       const body = await response.text();
       const rows = body.split("\n").filter((line) => line && !line.startsWith("#"));

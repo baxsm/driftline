@@ -1,18 +1,42 @@
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import type { Page } from "@playwright/test";
 
-export const SEQUENCE_PATH = process.env.E2E_SEQUENCE_PATH ?? "";
+/**
+ * Sequences live in the repo's own gitignored `data/` folder, so the suite finds them without
+ * any environment plumbing. The env vars still win where they are set, which is what a machine
+ * keeping its sequences somewhere else needs.
+ *
+ * The backend resolves these paths, and it runs on this machine, so an absolute path is what it
+ * needs rather than one relative to the test process.
+ */
+const DATA_ROOT = resolve(__dirname, "..", "..", "data");
+
+function sequence(override: string | undefined, name: string): string {
+  if (override) return override;
+  const path = join(DATA_ROOT, name);
+  return existsSync(path) ? path : "";
+}
+
+export const SEQUENCE_PATH = sequence(process.env.E2E_SEQUENCE_PATH, "dataset-room1_512_16");
 /** A real directory with no sequence in it, for the "missing file" error path. */
-export const EMPTY_DIR = process.env.E2E_EMPTY_DIR ?? "";
+export const EMPTY_DIR = sequence(process.env.E2E_EMPTY_DIR, "empty-dir");
 /** A short rendered sequence, so a whole run finishes inside a test. */
-export const RUN_SEQUENCE_PATH = process.env.E2E_RUN_SEQUENCE_PATH ?? "";
+export const RUN_SEQUENCE_PATH = sequence(process.env.E2E_RUN_SEQUENCE_PATH, "synthetic-short");
 /** A rendered sequence carrying ground truth, so a run over it can be scored. */
-export const SCORABLE_SEQUENCE_PATH = process.env.E2E_SCORABLE_SEQUENCE_PATH ?? "";
+export const SCORABLE_SEQUENCE_PATH = sequence(
+  process.env.E2E_SCORABLE_SEQUENCE_PATH,
+  "synthetic-scorable",
+);
 /**
  * A rendered sequence with no ground truth, for the unscorable path. It has to be a sequence
  * that genuinely has none: a scorable one gets scored, and the test would then be asserting
  * the absence of a panel that is correctly present.
  */
-export const UNSCORABLE_SEQUENCE_PATH = process.env.E2E_UNSCORABLE_SEQUENCE_PATH ?? "";
+export const UNSCORABLE_SEQUENCE_PATH = sequence(
+  process.env.E2E_UNSCORABLE_SEQUENCE_PATH,
+  "synthetic-line",
+);
 
 export function uniqueEmail(): string {
   const suffix = Math.random().toString(36).slice(2, 10);

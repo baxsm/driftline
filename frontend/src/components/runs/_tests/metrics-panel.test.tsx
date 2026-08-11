@@ -69,14 +69,17 @@ describe("MetricsPanel", () => {
     expect(screen.getByText("2.50x too large")).toBeInTheDocument();
   });
 
-  it("says scale was not fitted under se3", () => {
+  it("says scale was measured rather than fitted under se3", () => {
+    // an inertial run observes scale through gravity, so calling it "not fitted" undersells
+    // it: the number is the estimator's own and never came from truth
     render(
       <MetricsPanel
         metrics={response({ metrics: metrics({ alignment: "se3", scale_error: null }) })}
         status="done"
       />,
     );
-    expect(screen.getByText("not fitted")).toBeInTheDocument();
+    expect(screen.getByText("measured")).toBeInTheDocument();
+    expect(screen.getByText(/never fitted to truth/i)).toBeInTheDocument();
     expect(screen.getByText("SE(3) aligned")).toBeInTheDocument();
   });
 

@@ -1,4 +1,13 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/*
+ * Every request in this app goes to its own origin as `/api/...`, and `next.config.ts` rewrites
+ * that to the backend.
+ *
+ * Calling the backend's URL directly would make every request cross-site once the two services
+ * are deployed separately, and the session cookie is `SameSite=Lax`, which browsers withhold on
+ * cross-site requests. That fails only in production, and it presents as being randomly logged
+ * out rather than as a misconfiguration. Going through the proxy keeps the cookie first-party,
+ * which is why there is no base URL constant here to prefix onto anything.
+ */
 
 export interface ApiErrorBody {
   code: string;
@@ -21,17 +30,16 @@ export class ApiError extends Error {
 }
 
 /**
- * A blocked cross-origin request and a stopped server both surface as the same thrown fetch,
- * with no detail the client can read. The message names both, because the second one is easy
- * to miss when the backend is plainly running.
+ * Requests are proxied, so a failure here means this app could not reach the backend rather
+ * than that the browser blocked it. `BACKEND_URL` is the setting that decides where it looked.
  */
 const NETWORK_MESSAGE =
-  "Could not reach the server. Check that the backend is running and that this origin is in its CORS_ORIGINS.";
+  "Could not reach the server. Check that the backend is running and that BACKEND_URL points at it.";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, {
+    response = await fetch(path, {
       ...init,
       credentials: "include",
       headers: { "Content-Type": "application/json", ...init?.headers },

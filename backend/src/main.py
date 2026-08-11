@@ -33,6 +33,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="driftline", version="0.1.0", lifespan=lifespan)
 
+# The browser reaches this API through the frontend's own origin, which rewrites `/api/*` here,
+# so browser requests arrive server to server and never need CORS. This stays for direct API
+# use, and because a misconfigured proxy should fail loudly rather than be masked by a wildcard.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,

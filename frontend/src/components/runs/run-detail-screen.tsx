@@ -10,7 +10,7 @@ import TrackingView from "@/components/runs/tracking-view";
 import { ErrorState, LoadingRows } from "@/components/states";
 import { Skeleton } from "@/components/ui/skeleton";
 import TrajectoryViewer, { type TrajectoryPath } from "@/components/viewer/trajectory-viewer";
-import { API_BASE, ApiError, api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { formatCount, formatMetres, progressPercent, shortHash } from "@/lib/format";
 import type {
   GroundTruthResponse,
@@ -182,7 +182,7 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
   useEffect(() => {
     if (!streaming) return;
 
-    const source = new EventSource(`${API_BASE}/api/runs/${runId}/events`, {
+    const source = new EventSource(`/api/runs/${runId}/events`, {
       withCredentials: true,
     });
 
@@ -310,7 +310,15 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
             ) : null}
 
             <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
-              <Stat label="Mode" value={config.mode} hint="visual only" />
+              <Stat
+                label="Mode"
+                value={config.mode}
+                hint={
+                  config.mode === "mono_inertial"
+                    ? "camera fused with the imu"
+                    : "camera only, no scale"
+                }
+              />
               <Stat label="Max features" value={formatCount(config.max_features)} />
               <Stat
                 label="Keyframe parallax"
@@ -343,7 +351,7 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
                   ? "Aligned onto ground truth, so distances are in metres"
                   : trajectory?.scale_is_arbitrary
                     ? "Monocular, so distances have no absolute scale"
-                    : null}
+                    : "Metres, measured by the IMU rather than fitted to truth"}
               </span>
             </div>
             {inFlight ? (

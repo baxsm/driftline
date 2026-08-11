@@ -29,6 +29,7 @@ POSE_ERROR_CHUNK = 2000
 # hide the scale drift that the mode exists to expose.
 ALIGNMENT_FOR_MODE: dict[str, AlignmentMode] = {
     "mono": "sim3",
+    "mono_inertial": "se3",
     "stereo": "se3",
     "stereo_inertial": "se3",
 }
@@ -49,27 +50,45 @@ def _trajectory_from(rows: list[Pose] | list[GroundTruthPose]) -> Trajectory:
     )
 
 
-def estimate_trajectory(
-    session: Session, run_id: uuid.UUID, calibration: dict[str, Any] | None = None
-) -> Trajectory:
-    """The estimated trajectory, in the body frame when the sequence ships an extrinsic.
+def estimates_in_camera_frame(config: dict[str, Any] | None) -> bool:
+    """Whether this mode's stored poses still need `T_cam_imu` applied to reach the body frame.
 
-    Poses are stored in the camera frame, which is what the estimator produces. Ground truth
-    is recorded in the IMU body frame, so the two are only comparable after `T_cam_imu` is
-    applied. On TUM VI the two frames are about 179 degrees apart.
+    The visual front end works in the camera frame, so a mono run's poses have to be rotated
+    across before they can be compared with truth. Fusion solves in the IMU body frame
+    directly, because that is the frame the accelerometer measures in, so its poses are
+    already there. Applying the extrinsic to those would rotate them a second time, which on
+    TUM VI is a further 179 degrees and would read as a badly broken estimator rather than as
+    a bug in this function.
     """
+    return str((config or {}).get("mode", "mono")) != "mono_inertial"
+
+
+def estimate_trajectory(
+    session: Session,
+    run_id: uuid.UUID,
+    calibration: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
+) -> Trajectory:
+    """The estimated trajectory, in the body frame that ground truth is recorded in."""
     rows = list(
         session.scalars(select(Pose).where(Pose.run_id == run_id).order_by(Pose.timestamp_ns))
     )
     trajectory = _trajectory_from(rows)
+    if not estimates_in_camera_frame(config):
+        return trajectory
     extrinsic = _body_to_camera(calibration)
     return trajectory.to_body_frame(extrinsic) if extrinsic is not None else trajectory
 
 
 def body_frame_positions(
-    positions: Any, quaternions: Any, calibration: dict[str, Any] | None
+    positions: Any,
+    quaternions: Any,
+    calibration: dict[str, Any] | None,
+    config: dict[str, Any] | None = None,
 ) -> Any:
     """Camera frame positions re-expressed in the body frame, for drawing over truth."""
+    if not estimates_in_camera_frame(config):
+        return positions
     extrinsic = _body_to_camera(calibration)
     if extrinsic is None or len(positions) == 0:
         return positions
@@ -195,7 +214,7 @@ def score_run_with_reason(
     if not dataset or not dataset.has_ground_truth:
         return None, "this sequence has no ground truth"
 
-    estimate = estimate_trajectory(session, run.id, dataset.calibration)
+    estimate = estimate_trajectory(session, run.id, dataset.calibration, run.config)
     if len(estimate.timestamps_ns) == 0:
         return None, "the run produced no poses"
 
@@ -246,7 +265,7 @@ def stored_alignment(session: Session, run: Run) -> Alignment | None:
 
     dataset = session.get(Dataset, run.dataset_id)
     estimate = estimate_trajectory(
-        session, run.id, dataset.calibration if dataset else None
+        session, run.id, dataset.calibration if dataset else None, run.config
     )
     truth = truth_trajectory(session, run.dataset_id)
     if len(estimate.timestamps_ns) == 0 or len(truth.timestamps_ns) == 0:

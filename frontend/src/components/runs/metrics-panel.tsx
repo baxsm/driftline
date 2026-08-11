@@ -128,10 +128,10 @@ const MetricsPanel: FC<MetricsPanelProps> = ({ metrics, status }) => {
         />
         <Figure
           label="Scale"
-          value={scale_error === null ? "not fitted" : formatScale(scale_error)}
+          value={scale_error === null ? "measured" : formatScale(scale_error)}
           hint={
             scale_error === null
-              ? "SE(3) keeps the estimator's own scale"
+              ? "the estimator's own metres, never fitted to truth"
               : "monocular, so scale came from truth"
           }
         />

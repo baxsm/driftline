@@ -9,12 +9,14 @@ KLT both work on image gradients over a window, and a one pixel dot has no gradi
 structure to lock onto.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial.transform import Rotation
 
+from datasets.parsing import ImuSample
 from geometry.transform import Transform
 
 Array = NDArray[np.float64]
@@ -22,6 +24,9 @@ Array = NDArray[np.float64]
 IMAGE_WIDTH = 640
 IMAGE_HEIGHT = 480
 FOCAL = 400.0
+
+GRAVITY = 9.81
+IMU_RATE_HZ = 200.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +105,161 @@ def straight_line_sequence(frames: int = 24, step: float = 0.25) -> SyntheticSeq
     matrix = camera_matrix()
     images = [_render(points, pose, matrix) for pose in poses]
     return SyntheticSequence(images=images, poses=poses, camera_matrix=matrix, points=points)
+
+
+@dataclass(frozen=True, slots=True)
+class InertialSequence:
+    """A camera path with the IMU stream a real device would have recorded along it."""
+
+    images: list[NDArray[np.uint8]]
+    poses: list[Transform]
+    camera_matrix: Array
+    frame_timestamps_ns: list[int]
+    imu: list[ImuSample]
+    #: metres actually travelled, so a test can assert that fusion recovered the scale
+    path_length: float
+
+
+def _accelerating_path(
+    amplitude: float, frequency: float
+) -> tuple[Callable[[float], Array], Callable[[float], Array]]:
+    """Position and acceleration for a smooth path that changes speed as well as direction.
+
+    Two properties matter, and both are easy to lose by picking a prettier curve:
+
+    Speed has to vary. A path travelled at constant speed is one a scale-free visual estimate
+    reconstructs perfectly by composing equal unit steps, so comparing fusion against it
+    measures nothing. The surge term below makes the distance covered between frames vary by
+    several times over the path.
+
+    Acceleration has to have a component along gravity. A purely horizontal acceleration
+    barely changes the *magnitude* of the specific force, since it is perpendicular to a 9.81
+    vector, which leaves gravity and accelerometer bias poorly separated.
+    """
+    surge = 0.55
+
+    def phase(t: float) -> float:
+        return frequency * t + surge * np.sin(frequency * t)
+
+    def phase_rate(t: float) -> float:
+        return frequency * (1.0 + surge * np.cos(frequency * t))
+
+    def phase_acceleration(t: float) -> float:
+        return -frequency**2 * surge * np.sin(frequency * t)
+
+    def position(t: float) -> Array:
+        angle = phase(t)
+        return np.array(
+            [
+                amplitude * np.sin(angle),
+                amplitude * (1.0 - np.cos(angle)),
+                0.4 * np.sin(0.7 * angle),
+            ]
+        )
+
+    def acceleration(t: float) -> Array:
+        angle = phase(t)
+        rate = phase_rate(t)
+        rate_change = phase_acceleration(t)
+        return np.array(
+            [
+                amplitude * (-np.sin(angle) * rate**2 + np.cos(angle) * rate_change),
+                amplitude * (np.cos(angle) * rate**2 + np.sin(angle) * rate_change),
+                0.4
+                * 0.7
+                * (-0.7 * np.sin(0.7 * angle) * rate**2 + np.cos(0.7 * angle) * rate_change),
+            ]
+        )
+
+    return position, acceleration
+
+
+def inertial_sequence(
+    frames: int = 40,
+    frame_rate_hz: float = 20.0,
+    amplitude: float = 1.6,
+    frequency: float = 0.9,
+    start_timestamp_ns: int = 1_000_000_000_000_000_000,
+    yaw_per_second: float = 0.0,
+) -> InertialSequence:
+    """A rendered camera path plus the IMU samples consistent with it.
+
+    The accelerometer reports specific force, which is the path's own acceleration plus the
+    reaction to gravity, expressed in the body frame. Getting that sum wrong is the classic
+    silent fusion bug: the trajectory still comes out finite and smooth, just curved away from
+    the truth, which is why this is derived from the path analytically rather than by
+    differencing the rendered poses.
+
+    Body and camera frames are deliberately identical here. The extrinsic is exercised
+    separately by the tests that push a trajectory through a known 179 degree rotation.
+
+    `yaw_per_second` turns the device as it travels, and it matters more than it looks. With
+    the body held at identity the body and world frames coincide, so a fusion bug that mixes
+    the two is invisible: three separate frame errors passed every test on this sequence and
+    only appeared on the first real sequence with a turning camera. Any test that means to
+    exercise frame handling has to set this.
+    """
+    position_at, acceleration_at = _accelerating_path(amplitude, frequency)
+
+    def attitude_at(t: float) -> Array:
+        return np.asarray(Rotation.from_euler("z", yaw_per_second * t).as_matrix())
+
+    duration = (frames - 1) / frame_rate_hz
+    rng = np.random.default_rng(23)
+    count = 1400
+    span = amplitude * 2.5
+    points = np.column_stack(
+        [
+            rng.uniform(-span - 4.0, span + 4.0, count),
+            rng.uniform(-span - 3.0, span + 3.0, count),
+            rng.uniform(3.0, 11.0, count),
+        ]
+    )
+
+    poses = [
+        Transform(attitude_at(i / frame_rate_hz), position_at(i / frame_rate_hz))
+        for i in range(frames)
+    ]
+    matrix = camera_matrix()
+    images = [_render(points, pose, matrix) for pose in poses]
+
+    frame_timestamps = [
+        start_timestamp_ns + round(i / frame_rate_hz * 1e9) for i in range(frames)
+    ]
+
+    # the stream starts before the first frame and ends after the last, because
+    # preintegration between two keyframes needs samples covering the whole interval
+    sample_count = int(duration * IMU_RATE_HZ) + 3
+    imu = []
+    for index in range(sample_count):
+        t = (index - 1) / IMU_RATE_HZ
+        # the accelerometer is bolted to the device, so it reads the world frame specific
+        # force expressed in the body frame, which is the world-to-body rotation applied
+        specific_force = acceleration_at(t) + np.array([0.0, 0.0, GRAVITY])
+        in_body = attitude_at(t).T @ specific_force
+        imu.append(
+            ImuSample(
+                timestamp_ns=start_timestamp_ns + round(t * 1e9),
+                wx=0.0,
+                wy=0.0,
+                wz=float(yaw_per_second),
+                ax=float(in_body[0]),
+                ay=float(in_body[1]),
+                az=float(in_body[2]),
+            )
+        )
+
+    positions = np.array([pose.translation for pose in poses])
+    path_length = float(np.linalg.norm(np.diff(positions, axis=0), axis=1).sum())
+
+    return InertialSequence(
+        images=images,
+        poses=poses,
+        camera_matrix=matrix,
+        frame_timestamps_ns=frame_timestamps,
+        imu=imu,
+        path_length=path_length,
+    )
 
 
 def turning_sequence(

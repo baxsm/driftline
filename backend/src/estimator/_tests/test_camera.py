@@ -72,3 +72,50 @@ def test_undistort_is_a_no_op_without_distortion(tmp_path: Path):
 def test_empty_input_returns_empty(tmp_path: Path):
     camera = camera_from_calibration(_camera_from_yaml(tmp_path, TUM_VI_CAMCHAIN))
     assert len(camera.undistort(np.empty((0, 2), dtype=np.float32))) == 0
+
+
+def test_a_16_bit_frame_is_served_as_viewable_8_bit(tmp_path):
+    """TUM VI frames are 16 bit, and a browser renders those almost black.
+
+    room1 averages 10032 of 65535, which an `<img>` shows as mean 39 of 255, so the tracking
+    view drew its features over what looked like an empty rectangle. The frames are not
+    corrupt, they are deep, and the fix is to convert rather than to hand over raw bytes.
+    """
+    import cv2
+    import numpy as np
+
+    from estimator.images import viewable_frame
+
+    deep = np.full((32, 32), 10_000, dtype=np.uint16)
+    deep[8:16, 8:16] = 60_000
+    path = tmp_path / "frame.png"
+    cv2.imwrite(str(path), deep)
+
+    decoded = cv2.imdecode(
+        np.frombuffer(viewable_frame(path), np.uint8), cv2.IMREAD_UNCHANGED
+    )
+
+    assert decoded.dtype == np.uint8
+    assert decoded.shape == (32, 32)
+    # the bright patch has to survive as bright, not be crushed with everything else
+    assert decoded[12, 12] > decoded[0, 0]
+    assert decoded.max() > 200
+
+
+def test_enhancing_a_viewable_frame_lifts_a_dark_one(tmp_path):
+    import cv2
+    import numpy as np
+
+    from estimator.images import viewable_frame
+
+    rng = np.random.default_rng(3)
+    dark = rng.integers(2000, 14_000, size=(64, 64)).astype(np.uint16)
+    path = tmp_path / "dark.png"
+    cv2.imwrite(str(path), dark)
+
+    plain = cv2.imdecode(np.frombuffer(viewable_frame(path), np.uint8), cv2.IMREAD_UNCHANGED)
+    lifted = cv2.imdecode(
+        np.frombuffer(viewable_frame(path, enhance=True), np.uint8), cv2.IMREAD_UNCHANGED
+    )
+
+    assert lifted.std() > plain.std()

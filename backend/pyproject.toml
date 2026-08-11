@@ -43,6 +43,9 @@ disallow_untyped_defs = true
 exclude = ["_tests/"]
 
 [[tool.mypy.overrides]]
-module = ["evo.*", "cv2.*", "yaml.*", "pandas.*"]
+# gtsam ships no stubs and no Windows wheel, so it is unresolvable on this machine by
+# design; `estimator/fusion.py` imports it at call time and reports a real reason when the
+# runtime does not have it
+module = ["evo.*", "cv2.*", "yaml.*", "pandas.*", "gtsam.*"]
 ignore_missing_imports = true
 

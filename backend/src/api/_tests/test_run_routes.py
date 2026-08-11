@@ -139,3 +139,44 @@ def test_one_users_run_is_invisible_to_another(client, registered_dataset, accou
         json={"email": f"other-{account['email']}", "password": "testpassword123"},
     )
     assert client.get(f"/api/runs/{created['id']}").status_code == 404
+
+
+def test_an_unexpected_crash_names_what_went_wrong(
+    client, session, registered_dataset, monkeypatch
+):
+    """A crash the estimator did not anticipate must still say what happened.
+
+    This is not hypothetical. A missing parquet engine in the fusion image crashed a run after
+    the estimate had already been computed, and the panel said only "the estimator stopped
+    unexpectedly", which sends the reader to the container logs to learn that the trajectory
+    was fine and only writing it out had failed.
+    """
+
+    def explode(*args, **kwargs):
+        raise ImportError("Unable to find a usable engine; tried using: 'pyarrow'")
+
+    monkeypatch.setattr(worker, "write_tracks", explode)
+
+    created = client.post("/api/runs", json={"dataset_id": registered_dataset}).json()
+    assert worker.process_one(session) is True
+
+    run = client.get(f"/api/runs/{created['id']}").json()
+    assert run["status"] == "failed"
+    assert "ImportError" in run["failure_reason"]
+    assert "pyarrow" in run["failure_reason"]
+
+
+def test_a_crash_reason_stays_short_enough_to_read(
+    client, session, registered_dataset, monkeypatch
+):
+    def explode(*args, **kwargs):
+        raise RuntimeError("x" * 5000)
+
+    monkeypatch.setattr(worker, "write_tracks", explode)
+
+    created = client.post("/api/runs", json={"dataset_id": registered_dataset}).json()
+    assert worker.process_one(session) is True
+
+    reason = client.get(f"/api/runs/{created['id']}").json()["failure_reason"]
+    assert len(reason) < 400
+    assert reason.endswith("...")

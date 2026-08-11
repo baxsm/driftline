@@ -70,8 +70,10 @@ export type RunStatus = "queued" | "running" | "done" | "failed";
  * Only the fields phase 2 actually estimates. Keyframe, window, and IMU settings arrive with
  * the stages that use them, because a control that changes nothing is worse than no control.
  */
+export type EstimatorMode = "mono" | "mono_inertial";
+
 export interface EstimatorConfig {
-  mode: "mono";
+  mode: EstimatorMode;
   max_features: number;
   corner_quality: number;
   min_feature_distance_px: number;

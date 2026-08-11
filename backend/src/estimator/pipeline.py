@@ -29,11 +29,10 @@ from geometry.transform import Transform, compose, interpolate
 
 from .camera import Camera
 from .config import EstimatorConfig
+from .fusion import KeyframeMotion
+from .images import CLAHE_CLIP_LIMIT, CLAHE_TILE_GRID
 from .motion import MotionUnrecoverable, estimate_motion
 from .tracker import Observation, TrackerState, advance
-
-CLAHE_CLIP_LIMIT = 3.0
-CLAHE_TILE_GRID = (8, 8)
 
 # below this many correspondences back to the keyframe there is nothing to solve, and it is
 # better to take a new keyframe than to solve a badly constrained one
@@ -70,6 +69,10 @@ class RunOutcome:
     failure_reason: str | None = None
     failure_frame: int | None = None
     keyframe_count: int = 0
+    #: one entry per keyframe, carrying the motion solved since the previous one, so fusion
+    #: can constrain its direction. The first entry is the identity: it anchors the
+    #: trajectory and has no motion before it.
+    keyframe_motions: list[KeyframeMotion] = field(default_factory=list)
 
     @property
     def failed(self) -> bool:
@@ -185,6 +188,15 @@ def run_pipeline(
             keyframe_points = dict(zip(state.track_ids, state.points, strict=True))
             is_keyframe = True
             outcome.keyframe_count += 1
+            # the first keyframe anchors the trajectory and has no motion before it, so it
+            # carries the identity rather than being left out of the list fusion indexes
+            outcome.keyframe_motions.append(
+                KeyframeMotion(
+                    frame_index=frame_index,
+                    timestamp_ns=timestamp_ns,
+                    motion=Transform.identity(),
+                )
+            )
         else:
             frames_since_keyframe += 1
             source, target = _correspondences(keyframe_points, state.track_ids, state.points)
@@ -215,6 +227,13 @@ def run_pipeline(
                 inliers = estimate.inlier_count
                 is_keyframe = True
                 outcome.keyframe_count += 1
+                outcome.keyframe_motions.append(
+                    KeyframeMotion(
+                        frame_index=frame_index,
+                        timestamp_ns=timestamp_ns,
+                        motion=estimate.motion,
+                    )
+                )
                 keyframe_points = dict(zip(state.track_ids, state.points, strict=True))
                 frames_since_keyframe = 0
             elif frames_since_keyframe >= config.max_frames_without_keyframe:

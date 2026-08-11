@@ -21,7 +21,7 @@ from db.models import Dataset, User
 from db.session import get_session, session_scope
 from estimator.artifacts import artifacts_for, read_log, read_tracks
 from estimator.config import EstimatorConfig
-from estimator.images import open_frames
+from estimator.images import open_frames, viewable_frame
 
 from ..dependencies import current_user
 from ..errors import ApiError
@@ -137,6 +137,7 @@ def get_trajectory(
         _positions(poses),
         [[pose.qw, pose.qx, pose.qy, pose.qz] for pose in poses],
         dataset.calibration if dataset else None,
+        run.config,
     )
 
     body["poses"] = [
@@ -266,8 +267,9 @@ def get_frame_image(
     if not path.is_file():
         raise ApiError("frame_not_found", "That frame is listed but missing from disk.")
 
+    enhance = bool(run.config.get("enhance_contrast", False))
     return Response(
-        content=path.read_bytes(),
+        content=viewable_frame(path, enhance=enhance),
         media_type="application/octet-stream",
         headers={"Cache-Control": "private, max-age=3600"},
     )
@@ -301,7 +303,7 @@ def export_run(
         # evo over these two files reproduces the numbers the UI shows
         dataset = session.get(Dataset, run.dataset_id)
         trajectory = metrics_service.estimate_trajectory(
-            session, run.id, dataset.calibration if dataset else None
+            session, run.id, dataset.calibration if dataset else None, run.config
         )
         if len(trajectory.timestamps_ns) == 0:
             raise ApiError("no_poses", "This run has no estimated poses to export.")

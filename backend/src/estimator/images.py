@@ -19,6 +19,11 @@ from datasets.parsing import read_frames
 
 CAMERA_FOLDERS = ("cam0", "cam1")
 
+# Contrast limited equalisation settings, shared by the estimator and by the frame the
+# tracking view draws, so the two never disagree about what a frame looks like.
+CLAHE_CLIP_LIMIT = 3.0
+CLAHE_TILE_GRID = (8, 8)
+
 
 @dataclass(frozen=True, slots=True)
 class FrameSource:
@@ -44,6 +49,31 @@ class FrameSource:
         if image is None:
             raise SequenceUnreadable(f"could not read frame {path.name}", str(path))
         return np.asarray(image, dtype=np.uint8)
+
+
+def viewable_frame(path: Path, enhance: bool = False) -> bytes:
+    """One frame as a PNG a browser renders the way the estimator saw it.
+
+    TUM VI ships 16 bit frames. Handing those bytes to an `<img>` unchanged is technically
+    correct and visually useless: room1 averages 10032 of 65535, which a browser shows as
+    mean 39 of 255, so the tracking view drew its features over what looked like a black
+    rectangle. The frames are not corrupt, they are dark and deep.
+
+    `enhance` mirrors the run's own `enhance_contrast`, so what is drawn is what detection
+    actually worked on rather than a prettier version of it.
+    """
+    image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+    if image is None:
+        raise SequenceUnreadable(f"could not read frame {path.name}", str(path))
+
+    if enhance:
+        operator = cv2.createCLAHE(clipLimit=CLAHE_CLIP_LIMIT, tileGridSize=CLAHE_TILE_GRID)
+        image = operator.apply(image)
+
+    ok, encoded = cv2.imencode(".png", image)
+    if not ok:
+        raise SequenceUnreadable(f"could not encode frame {path.name}", str(path))
+    return bytes(encoded.tobytes())
 
 
 def open_frames(sequence_path: str | Path, camera: str = "cam0") -> FrameSource:

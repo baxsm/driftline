@@ -46,7 +46,7 @@ The app runs at `http://localhost:3000` and the API at `http://localhost:8000`.
 ## Sequences
 
 driftline reads sequences in the ASL folder layout, which TUM VI and EuRoC both use. Download
-one and register the folder that contains `mav0`:
+one, extract it into `data/`, and register the folder that contains `mav0`:
 
 ```
 https://cdn3.vision.in.tum.de/tumvi/exported/euroc/512_16/dataset-room1_512_16.tar
@@ -62,5 +62,12 @@ cd backend && .venv/Scripts/pytest
 cd frontend && npm test && npm run e2e
 ```
 
-Tests that need a real sequence on disk read `DRIFTLINE_TEST_SEQUENCE` (backend) and
-`E2E_SEQUENCE_PATH` (end to end), and skip when it is unset.
+Tests that need a real sequence read `data/dataset-room1_512_16`, and skip when it is not
+there. Point them somewhere else with `DRIFTLINE_TEST_SEQUENCE` (backend) or
+`E2E_SEQUENCE_PATH` (end to end).
+
+Inertial runs need GTSAM, which publishes no Windows wheel, so they run in the container:
+
+```bash
+cd backend && docker build -t driftline-fusion .
+```

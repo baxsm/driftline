@@ -26,6 +26,10 @@ GROUND_TRUTH_CANDIDATES = (
     Path("dso") / "gt_imu.csv",
     Path("mav0") / "state_groundtruth_estimate0" / "data.csv",
 )
+# The order here is load bearing, not stylistic. On TUM VI room1 `dso/imu.txt` has 30943 rows
+# against `mav0/imu0/data.csv`'s 28122, and the 2821 extra are interpolated samples sitting at
+# exactly the camera timestamps. Preintegrating those counts the same interval twice and hands
+# the integrator sub-microsecond steps, so the clean file has to win.
 IMU_CANDIDATES = (
     Path("mav0") / "imu0" / "data.csv",
     Path("dso") / "imu.txt",
