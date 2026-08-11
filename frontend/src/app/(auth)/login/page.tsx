@@ -1,12 +1,8 @@
 import AuthForm from "@/components/auth-form";
-import RedirectWhenSignedIn from "@/components/redirect-when-signed-in";
 
 export const metadata = { title: "Sign in - driftline" };
 
+// a signed in reader never reaches this page: proxy.ts sends them to the app before it renders
 export default function LoginPage() {
-  return (
-    <RedirectWhenSignedIn>
-      <AuthForm mode="login" />
-    </RedirectWhenSignedIn>
-  );
+  return <AuthForm mode="login" />;
 }

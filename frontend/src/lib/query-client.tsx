@@ -1,7 +1,8 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { type FC, type ReactNode, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { type FC, type ReactNode, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 
 /**
@@ -57,6 +58,31 @@ function getQueryClient(): QueryClient {
 const QueryProvider: FC<{ children: ReactNode }> = ({ children }) => {
   // held in state rather than called inline, so a re-render never swaps the cache out
   const [client] = useState(getQueryClient);
+  const router = useRouter();
+  const pathname = usePathname();
+
+  /*
+   * A session that expires while the app is open.
+   *
+   * `proxy.ts` decides on the way in and cannot help here, because the cookie is still present
+   * in the browser until it lapses. So the first request that comes back 401 is what says the
+   * session is gone, and the reader is sent to sign in rather than left on a screen whose
+   * panels are all reporting failures they cannot explain.
+   */
+  useEffect(() => {
+    const unsubscribe = client.getQueryCache().subscribe((event) => {
+      if (event.type !== "updated" || event.action.type !== "error") return;
+      const error = event.action.error;
+      if (!(error instanceof ApiError) || error.status !== 401) return;
+      if (!pathname.startsWith("/app")) return;
+
+      client.clear();
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+      router.refresh();
+    });
+    return unsubscribe;
+  }, [client, router, pathname]);
+
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 };
 

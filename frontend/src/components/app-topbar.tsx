@@ -30,8 +30,10 @@ const AppTopbar: FC<AppTopbarProps> = ({ title, parent, action }) => {
   async function handleSignOut() {
     setSigningOut(true);
     try {
+      // the provider drops the cache; this only has to leave the app
       await signOut();
-      router.push("/login");
+      router.replace("/login");
+      router.refresh();
     } finally {
       setSigningOut(false);
     }

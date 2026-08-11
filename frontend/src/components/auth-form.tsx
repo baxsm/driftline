@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { type FC, type FormEvent, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,7 @@ const COPY = {
 
 const AuthForm: FC<AuthFormProps> = ({ mode }) => {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { signIn, register } = useAuth();
   const copy = COPY[mode];
 
@@ -55,7 +56,18 @@ const AuthForm: FC<AuthFormProps> = ({ mode }) => {
       } else {
         await register(email, password);
       }
-      router.push("/app/datasets");
+      /*
+       * Back to wherever they were headed when the proxy turned them away, or the default
+       * screen. `next` is checked to be a path on this app: an absolute URL here would let a
+       * crafted sign in link bounce the reader to another site carrying a fresh session.
+       *
+       * `refresh` is what makes the destination arrive drawn. The server rendered the shell
+       * for a signed out reader, so without it the app would render against a stale session.
+       */
+      const next = searchParams.get("next");
+      const destination = next?.startsWith("/app/") ? next : "/app/datasets";
+      router.replace(destination);
+      router.refresh();
     } catch (caught) {
       if (caught instanceof ApiError) {
         setError(caught.message);
