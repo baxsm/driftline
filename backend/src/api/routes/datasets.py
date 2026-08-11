@@ -8,6 +8,7 @@ from db.models import User
 from db.session import get_session
 
 from ..dependencies import current_user
+from ..errors import ApiError
 from ..serializers import dataset_response, dataset_summary, pose_response
 from ..services import datasets as service
 
@@ -60,14 +61,32 @@ def delete_dataset(
 def get_ground_truth(
     dataset_id: str,
     stride: int = Query(default=1, ge=1, le=1000),
+    from_ns: str | None = Query(default=None, alias="from"),
+    to_ns: str | None = Query(default=None, alias="to"),
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
+    """Ground truth for a sequence, optionally only the span a run covered.
+
+    The window is taken as a string because a nanosecond timestamp is 19 digits, which is past
+    what a JSON number survives on the client that has to send it back.
+    """
     dataset = service.get_dataset(session, user.id, dataset_id)
-    poses, total = service.ground_truth_poses(session, dataset.id, stride)
+    poses, total = service.ground_truth_poses(
+        session, dataset.id, stride, _timestamp(from_ns, "from"), _timestamp(to_ns, "to")
+    )
     return {
         "poses": [pose_response(pose) for pose in poses],
         "stride": stride,
         "total": total,
         "has_ground_truth": dataset.has_ground_truth,
     }
+
+
+def _timestamp(value: str | None, field: str) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        raise ApiError("bad_timestamp", "That is not a nanosecond timestamp.", field) from None

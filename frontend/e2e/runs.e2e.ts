@@ -139,4 +139,22 @@ test.describe("runs", () => {
     );
     expect(overflow).toBeLessThanOrEqual(1);
   });
+
+  test("shows the estimator log on demand", async ({ page }) => {
+    // the failure banner states the conclusion; the log is the working behind it, and it is
+    // collapsed by default because it is a diagnostic rather than part of reading a good run
+    await registerSequence(page, RUN_SEQUENCE_PATH, "e2e log");
+    await queueRunAndWait(page, "e2e log run");
+
+    await page.getByRole("link", { name: "e2e log run" }).click();
+    await page.waitForURL("**/app/runs/**");
+
+    const toggle = page.getByRole("button", { name: "Show log" });
+    await toggle.scrollIntoViewIfNeeded();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await toggle.click();
+    await expect(page.getByRole("button", { name: "Hide log" })).toBeVisible();
+    await expect(page.getByText(/camera model/)).toBeVisible();
+  });
 });

@@ -127,7 +127,15 @@ def pose_error_response(error: PoseError) -> dict[str, Any]:
 
 
 def run_summary(run: Run) -> dict[str, Any]:
-    """List shape. The full config is omitted because the list only shows the hash."""
+    """List shape. The full config is omitted because the list only shows the hash.
+
+    `ate_rmse` travels with its `alignment`, and both are null on a run that was never scored.
+    The list can sort on the figure, so it has to carry it, and it carries the alignment for the
+    same reason the detail panel does: an ATE fitted under Sim(3) and one under SE(3) are not
+    the same measurement, and a column that shows the number without saying which invites
+    ranking two runs that were never comparable.
+    """
+    metrics = run.metrics
     return {
         "id": str(run.id),
         "dataset_id": str(run.dataset_id),
@@ -140,4 +148,6 @@ def run_summary(run: Run) -> dict[str, Any]:
         "total_frames": run.total_frames,
         "created_at": run.created_at.isoformat(),
         "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "ate_rmse": metrics.ate_rmse if metrics else None,
+        "alignment": metrics.alignment if metrics else None,
     }

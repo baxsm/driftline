@@ -107,3 +107,96 @@ export function formatDate(iso: string): string {
   const day = String(parsed.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
+/** Metric keys as the compare table names them, matching the run page's own labels. */
+export const METRIC_LABELS: Record<string, string> = {
+  ate_rmse: "ATE RMSE",
+  ate_mean: "ATE mean",
+  ate_median: "ATE median",
+  ate_max: "ATE max",
+  ate_rot_rmse: "Rotation offset",
+  rpe_trans_rmse: "RPE translation",
+  rpe_rot_rmse: "RPE rotation",
+};
+
+/** Which metrics are angles, so the compare table does not print degrees as metres. */
+const ANGLE_METRICS = new Set(["ate_rot_rmse", "rpe_rot_rmse"]);
+
+export function formatMetric(key: string, value: number | null): string {
+  if (value === null) return "not measured";
+  return ANGLE_METRICS.has(key) ? formatDegrees(value) : formatMetres(value);
+}
+
+/**
+ * A delta with an explicit sign, because the sign is the whole message.
+ *
+ * Every metric in the table is one where lower is better, so a negative delta means run B
+ * improved on run A. The sign is written out rather than left to the minus glyph alone, so a
+ * positive delta cannot be misread as a plain figure.
+ */
+export function formatDelta(key: string, delta: number | null): string {
+  if (delta === null) return "not comparable";
+  if (delta === 0) return "no change";
+  const magnitude = ANGLE_METRICS.has(key)
+    ? formatDegrees(Math.abs(delta))
+    : formatMetres(Math.abs(delta));
+  return delta < 0 ? `${magnitude} better` : `${magnitude} worse`;
+}
+
+/** Config values render as text, and a null has to read as "unset" rather than as blank. */
+export function formatConfigValue(value: unknown): string {
+  if (value === null || value === undefined) return "unset";
+  if (typeof value === "boolean") return value ? "on" : "off";
+  return String(value);
+}
+
+/** Config keys as the run form names them, so the diff does not show raw snake_case. */
+export const CONFIG_LABELS: Record<string, string> = {
+  mode: "Mode",
+  max_features: "Max features",
+  corner_quality: "Corner quality",
+  min_feature_distance_px: "Min feature distance",
+  ransac_threshold_px: "RANSAC threshold",
+  redetect_below: "Redetect below",
+  min_track_length: "Min track length",
+  max_frames: "Max frames",
+  start_frame: "Start frame",
+  enhance_contrast: "Enhance contrast",
+  keyframe_parallax_px: "Keyframe parallax",
+  max_frames_without_keyframe: "Max frames without keyframe",
+};
+
+export function configLabel(key: string): string {
+  return CONFIG_LABELS[key] ?? key;
+}
+
+/**
+ * The query window that limits ground truth to the span an estimate actually covers.
+ *
+ * Truth is recorded for the whole sequence, and a run can cover a slice of it: a 250 frame run
+ * on room1 is about 12 seconds of a 141 second recording. Overlaying all of truth on that draws
+ * a dense tangle the estimate disappears into, and implies the estimate spans a path it never
+ * saw. The window is widened slightly at both ends so the truth line does not stop exactly on
+ * the first and last estimated pose and read as if it had been clipped to fit.
+ *
+ * Timestamps stay strings throughout. A 19 digit nanosecond value does not survive a JavaScript
+ * number, so it is never parsed on the way through.
+ */
+export function truthWindowQuery(
+  poses: { timestamp_ns: string }[],
+  paddingNs: bigint = BigInt(500_000_000),
+): string {
+  if (poses.length === 0) return "";
+
+  const zero = BigInt(0);
+  let low = BigInt(poses[0].timestamp_ns);
+  let high = low;
+  for (const pose of poses) {
+    const value = BigInt(pose.timestamp_ns);
+    if (value < low) low = value;
+    if (value > high) high = value;
+  }
+
+  const from = low - paddingNs;
+  return `&from=${from < zero ? zero : from}&to=${high + paddingNs}`;
+}

@@ -99,7 +99,14 @@ export interface RunSummary {
   total_frames: number;
   created_at: string;
   finished_at: string | null;
+  /** Null on a run that was never scored. Never zero, which would rank as the best run. */
+  ate_rmse: number | null;
+  /** How that ATE was fitted. Two ATEs aligned differently are not the same measurement. */
+  alignment: AlignmentMode | null;
 }
+
+/** Server side, because the list is paginated and sorting one page is not sorting the list. */
+export type RunSort = "created" | "ate" | "dataset";
 
 export interface Run {
   id: string;
@@ -202,4 +209,62 @@ export interface RunProgress {
   status: RunStatus;
   failure_reason: string | null;
   failure_frame: number | null;
+}
+
+/**
+ * One config key that differs between two runs. Keys that match are not sent: the reason to
+ * open compare is to find what changed, and fifteen identical rows bury it.
+ */
+export interface ConfigDiffRow {
+  key: string;
+  a: unknown;
+  b: unknown;
+}
+
+/**
+ * One metric across both runs.
+ *
+ * `delta` is null rather than zero whenever subtracting the two sides would be meaningless:
+ * a metric missing on one side, or two runs aligned differently. `comparable` says which of
+ * those it was, so the UI can explain the gap instead of just leaving it blank.
+ */
+export interface MetricDeltaRow {
+  key: string;
+  a: number | null;
+  b: number | null;
+  delta: number | null;
+  comparable: boolean;
+}
+
+/** An error sample on the elapsed-seconds axis the two runs share. */
+export interface CompareErrorPoint {
+  t: number;
+  trans_error: number;
+  rot_error: number;
+}
+
+export interface CompareSide {
+  id: string;
+  label: string | null;
+  dataset_id: string;
+  dataset_name: string | null;
+  config: EstimatorConfig;
+  config_hash: string;
+  status: RunStatus;
+  failure_reason: string | null;
+  failure_frame: number | null;
+  processed_frames: number;
+  total_frames: number;
+  created_at: string;
+  metrics: RunMetrics | null;
+  errors: CompareErrorPoint[];
+}
+
+export interface CompareResponse {
+  a: CompareSide;
+  b: CompareSide;
+  config_diff: ConfigDiffRow[];
+  metric_deltas: MetricDeltaRow[];
+  /** Both runs are on this sequence, so one ground truth path serves the shared viewer. */
+  dataset_id: string;
 }

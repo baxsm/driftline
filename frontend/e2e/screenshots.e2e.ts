@@ -56,9 +56,10 @@ test("capture every meaningful state", async ({ page }) => {
   await page.waitForTimeout(SETTLE_MS);
   await page.screenshot({ path: `${DIR}/07-runs-empty.png`, fullPage: true });
 
+  // compare with no pair chosen: the picker, not an error and not a blank screen
   await page.goto("/app/compare");
   await page.waitForTimeout(SETTLE_MS);
-  await page.screenshot({ path: `${DIR}/08-compare-not-built.png`, fullPage: true });
+  await page.screenshot({ path: `${DIR}/08-compare-no-pair.png`, fullPage: true });
 
   if (RUN_SEQUENCE_PATH) {
     await registerSequence(page, RUN_SEQUENCE_PATH, "shot sequence");
@@ -133,6 +134,45 @@ test("capture every meaningful state", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.waitForTimeout(1000);
     await page.screenshot({ path: `${DIR}/22-run-scored-375.png`, fullPage: true });
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    // a second run on the same sequence, so there is a real pair to compare
+    await page.goto("/app/datasets");
+    await page.getByRole("link", { name: "shot scorable" }).click();
+    await page.waitForURL(/\/app\/datasets\/[0-9a-f-]+$/);
+    await page.getByRole("button", { name: "New run" }).click();
+    await page.getByLabel("Label").fill("shot second");
+    await page.getByLabel("Max features").fill("400");
+    await page.getByRole("button", { name: "Queue run" }).click();
+    await page
+      .getByRole("listitem")
+      .filter({ hasText: "shot second" })
+      .getByText("Done")
+      .waitFor({ timeout: 60_000 });
+
+    await page.goto("/app/runs");
+    await page.waitForTimeout(SETTLE_MS);
+    await page.screenshot({ path: `${DIR}/23-runs-list.png`, fullPage: true });
+
+    await page.getByRole("button", { name: "Best ATE" }).click();
+    await page.waitForTimeout(SETTLE_MS);
+    await page.screenshot({ path: `${DIR}/24-runs-sorted-by-ate.png`, fullPage: true });
+
+    const boxes = page.getByTestId("run-list").getByRole("checkbox");
+    await boxes.nth(0).check();
+    await boxes.nth(1).check();
+    await page.waitForTimeout(SETTLE_MS);
+    await page.screenshot({ path: `${DIR}/25-runs-two-picked.png`, fullPage: true });
+
+    await page.getByRole("button", { name: "Compare" }).click();
+    await page.waitForURL(/\/app\/compare\?/);
+    // both trajectories plus truth have to finish drawing before this is worth looking at
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: `${DIR}/26-compare.png`, fullPage: true });
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: `${DIR}/27-compare-375.png`, fullPage: true });
     await page.setViewportSize({ width: 1440, height: 900 });
   }
 

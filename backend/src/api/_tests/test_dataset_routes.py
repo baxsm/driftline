@@ -159,3 +159,51 @@ def test_a_dataset_is_not_visible_to_another_account(client, signed_in, sequence
     )
     assert client.get(f"/api/datasets/{dataset_id}").status_code == 404
     assert client.get("/api/datasets").json()["datasets"] == []
+
+
+def test_ground_truth_can_be_limited_to_a_window(client, signed_in, scorable_sequence):
+    """A run covering part of a sequence should not be drawn against all of its truth.
+
+    Truth spans the whole recording. Overlaying every pose of it on a run that estimated a
+    slice buries the estimate in a tangle of path it never saw, and reads as if it had
+    followed the lot.
+    """
+    dataset_id = register(client, str(scorable_sequence)).json()["id"]
+
+    everything = client.get(f"/api/datasets/{dataset_id}/ground-truth").json()
+    first = int(everything["poses"][0]["timestamp_ns"])
+    cutoff = first + 500_000_000
+
+    windowed = client.get(
+        f"/api/datasets/{dataset_id}/ground-truth?from={first}&to={cutoff}"
+    ).json()
+
+    assert 0 < len(windowed["poses"]) < len(everything["poses"])
+    assert all(first <= int(p["timestamp_ns"]) <= cutoff for p in windowed["poses"])
+    # the total counts what is in the range asked for, not the whole sequence
+    assert windowed["total"] == len(windowed["poses"])
+
+
+def test_a_window_timestamp_keeps_full_nanosecond_precision(
+    client, signed_in, scorable_sequence
+):
+    """The bound is parsed from a string, because 19 digits do not survive a json number."""
+    dataset_id = register(client, str(scorable_sequence)).json()["id"]
+    everything = client.get(f"/api/datasets/{dataset_id}/ground-truth").json()
+    exact = int(everything["poses"][0]["timestamp_ns"])
+
+    windowed = client.get(
+        f"/api/datasets/{dataset_id}/ground-truth?from={exact}&to={exact}"
+    ).json()
+
+    assert len(windowed["poses"]) == 1
+    assert windowed["poses"][0]["timestamp_ns"] == str(exact)
+
+
+def test_a_window_that_is_not_a_timestamp_is_refused(client, signed_in, sequence_path):
+    dataset_id = register(client, sequence_path).json()["id"]
+
+    response = client.get(f"/api/datasets/{dataset_id}/ground-truth?from=yesterday")
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "bad_timestamp"

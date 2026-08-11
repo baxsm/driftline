@@ -180,3 +180,93 @@ def test_a_crash_reason_stays_short_enough_to_read(
     reason = client.get(f"/api/runs/{created['id']}").json()["failure_reason"]
     assert len(reason) < 400
     assert reason.endswith("...")
+
+
+def test_list_carries_ate_so_the_list_can_rank_runs(
+    client, session, scorable_dataset, tmp_path, monkeypatch
+):
+    """The list shows and sorts on ATE, so the summary has to carry it and its alignment."""
+    monkeypatch.setenv("STORAGE_DIR", str(tmp_path / "storage"))
+    from config import get_settings
+
+    get_settings.cache_clear()
+
+    client.post("/api/runs", json={"dataset_id": scorable_dataset})
+    assert worker.process_one(session) is True
+
+    row = client.get(f"/api/runs?dataset_id={scorable_dataset}").json()["runs"][0]
+
+    assert row["ate_rmse"] > 0.0
+    # a bare ATE is not comparable to another ATE without knowing how each was aligned
+    assert row["alignment"] == "sim3"
+
+    get_settings.cache_clear()
+
+
+def test_an_unscored_run_reports_a_null_ate_rather_than_zero(client, registered_dataset):
+    """Zero would sort to the top as the best run in the list."""
+    client.post("/api/runs", json={"dataset_id": registered_dataset})
+
+    row = client.get(f"/api/runs?dataset_id={registered_dataset}").json()["runs"][0]
+
+    assert row["ate_rmse"] is None
+    assert row["alignment"] is None
+
+
+def test_sorting_by_ate_puts_the_best_run_first(
+    client, session, scorable_dataset, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("STORAGE_DIR", str(tmp_path / "storage"))
+    from config import get_settings
+
+    get_settings.cache_clear()
+
+    for features in (600, 400, 300):
+        client.post(
+            "/api/runs",
+            json={"dataset_id": scorable_dataset, "config": {"max_features": features}},
+        )
+        assert worker.process_one(session) is True
+
+    rows = client.get(f"/api/runs?dataset_id={scorable_dataset}&sort=ate").json()["runs"]
+    scores = [row["ate_rmse"] for row in rows]
+
+    assert len(scores) == 3
+    assert scores == sorted(scores)
+
+    get_settings.cache_clear()
+
+
+def test_an_unscored_run_sorts_last_rather_than_disappearing(
+    client, session, scorable_dataset, registered_dataset, tmp_path, monkeypatch
+):
+    """A run that was never scored is a state worth seeing, so it sorts last, not away."""
+    monkeypatch.setenv("STORAGE_DIR", str(tmp_path / "storage"))
+    from config import get_settings
+
+    get_settings.cache_clear()
+
+    client.post("/api/runs", json={"dataset_id": scorable_dataset})
+    assert worker.process_one(session) is True
+    client.post("/api/runs", json={"dataset_id": registered_dataset})
+    assert worker.process_one(session) is True
+
+    rows = client.get("/api/runs?sort=ate").json()["runs"]
+
+    assert len(rows) == 2
+    assert rows[0]["ate_rmse"] is not None
+    assert rows[1]["ate_rmse"] is None
+
+    get_settings.cache_clear()
+
+
+def test_list_filters_by_status(client, registered_dataset):
+    client.post("/api/runs", json={"dataset_id": registered_dataset, "label": "waiting"})
+
+    assert client.get("/api/runs?status=queued").json()["total"] == 1
+    assert client.get("/api/runs?status=done").json()["total"] == 0
+
+
+def test_an_unknown_sort_is_rejected_rather_than_silently_ignored(client, registered_dataset):
+    """Falling back to the default would return a list that looks sorted and is not."""
+    assert client.get("/api/runs?sort=whatever").status_code == 422

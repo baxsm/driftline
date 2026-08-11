@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.errors import ApiError, api_error_handler, http_error_handler, validation_error_handler
 from api.routes.auth import router as auth_router
+from api.routes.compare import router as compare_router
 from api.routes.datasets import router as datasets_router
 from api.routes.runs import router as runs_router
 from api.services.worker import Worker
@@ -49,6 +50,7 @@ app.add_exception_handler(RequestValidationError, validation_error_handler)
 app.add_exception_handler(HTTPException, http_error_handler)  # type: ignore[arg-type]
 
 app.include_router(auth_router)
+app.include_router(compare_router)
 app.include_router(datasets_router)
 app.include_router(runs_router)
 

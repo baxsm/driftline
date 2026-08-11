@@ -16,6 +16,8 @@ const DONE: RunSummary = {
   total_frames: 2821,
   created_at: "2026-08-10T10:00:00+00:00",
   finished_at: "2026-08-10T10:04:00+00:00",
+  ate_rmse: 0.853,
+  alignment: "sim3",
 };
 
 const FAILED: RunSummary = {
@@ -25,6 +27,8 @@ const FAILED: RunSummary = {
   status: "failed",
   failure_reason: "only 3 tracked features, need 8",
   processed_frames: 412,
+  ate_rmse: null,
+  alignment: null,
 };
 
 const RUNNING: RunSummary = {
@@ -33,6 +37,17 @@ const RUNNING: RunSummary = {
   label: "Tighter RANSAC",
   status: "running",
   processed_frames: 1410,
+  ate_rmse: null,
+  alignment: null,
+};
+
+/** A run on another sequence, which cannot be compared against one of these. */
+const OTHER_SEQUENCE: RunSummary = {
+  ...DONE,
+  id: "44444444-4444-4444-4444-444444444444",
+  dataset_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+  dataset_name: "dataset-corridor1",
+  label: "Corridor baseline",
 };
 
 function renderList(runs: RunSummary[], pendingId: string | null = null, showDataset = true) {
@@ -108,5 +123,64 @@ describe("RunList", () => {
   it("disables the row being deleted", () => {
     renderList([DONE], DONE.id);
     expect(screen.getByRole("button", { name: "Deleting" })).toBeDisabled();
+  });
+
+  it("shows the ATE with the alignment it was measured under", () => {
+    // a bare ATE invites ranking two runs that were never measuring the same thing
+    renderList([DONE]);
+    expect(screen.getByText("85.3 cm")).toBeInTheDocument();
+    expect(screen.getByText("ATE, Sim(3)")).toBeInTheDocument();
+  });
+
+  it("says a finished run was not scored rather than showing a zero", () => {
+    renderList([FAILED]);
+    expect(screen.getByText("not scored")).toBeInTheDocument();
+    expect(screen.queryByText("0.0 mm")).toBeNull();
+  });
+
+  it("says a run still going has no score yet", () => {
+    renderList([RUNNING]);
+    expect(screen.getByText("no score yet")).toBeInTheDocument();
+  });
+
+  it("offers no selection when comparing is not on", () => {
+    renderList([DONE]);
+    expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+
+  it("hands the id back when a row is picked", async () => {
+    const onToggle = vi.fn();
+    render(
+      <RunList
+        runs={[DONE]}
+        onDelete={vi.fn()}
+        pendingId={null}
+        selected={[]}
+        onToggle={onToggle}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("checkbox"));
+
+    expect(onToggle).toHaveBeenCalledWith(DONE.id);
+  });
+
+  it("blocks a run on another sequence, because there is no common ground truth", () => {
+    render(
+      <RunList
+        runs={[DONE, OTHER_SEQUENCE]}
+        onDelete={vi.fn()}
+        pendingId={null}
+        selected={[DONE.id]}
+        onToggle={vi.fn()}
+        disabledReason={(run) =>
+          run.dataset_id === DONE.dataset_id ? null : "On a different sequence."
+        }
+      />,
+    );
+
+    const [first, second] = screen.getAllByRole("checkbox");
+    expect(first).toBeChecked();
+    expect(second).toBeDisabled();
   });
 });

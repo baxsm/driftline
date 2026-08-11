@@ -5,16 +5,24 @@ import { type FC, useCallback, useEffect, useMemo, useState } from "react";
 import AppTopbar from "@/components/app-topbar";
 import ErrorInspector from "@/components/runs/error-inspector";
 import MetricsPanel from "@/components/runs/metrics-panel";
+import RunLog from "@/components/runs/run-log";
 import RunStatusBadge from "@/components/runs/run-status-badge";
 import TrackingView from "@/components/runs/tracking-view";
 import { ErrorState, LoadingRows } from "@/components/states";
 import { Skeleton } from "@/components/ui/skeleton";
 import TrajectoryViewer, { type TrajectoryPath } from "@/components/viewer/trajectory-viewer";
 import { ApiError, api } from "@/lib/api";
-import { formatCount, formatMetres, progressPercent, shortHash } from "@/lib/format";
+import {
+  formatCount,
+  formatMetres,
+  progressPercent,
+  shortHash,
+  truthWindowQuery,
+} from "@/lib/format";
 import type {
   GroundTruthResponse,
   MetricsResponse,
+  Pose,
   PoseErrorsResponse,
   Run,
   RunProgress,
@@ -45,6 +53,32 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [streaming, setStreaming] = useState(false);
+  // captured when the stream opens rather than read from `run` inside the handler, which would
+  // be a stale closure over whatever the run was when the listener was created
+  const [streamingDatasetId, setStreamingDatasetId] = useState<string | null>(null);
+
+  /**
+   * Ground truth for the overlay, decimated and limited to the span the run covered.
+   *
+   * A room sequence carries over 16000 truth poses against a couple of thousand estimated
+   * ones. Drawing every one costs a lot of geometry to render a line that is already
+   * visually continuous at a fraction of the density.
+   *
+   * The window matters as much as the decimation. Truth spans the whole recording, and a run
+   * configured with `start_frame` or `max_frames` covers part of it, so drawing all of truth
+   * puts the estimate inside a tangle of path it never saw and reads as if it had followed
+   * the lot.
+   */
+  const loadTruth = useCallback(async (datasetId: string, poses: Pose[]) => {
+    try {
+      const loaded = await api.get<GroundTruthResponse>(
+        `/api/datasets/${datasetId}/ground-truth?stride=${TRUTH_STRIDE}${truthWindowQuery(poses)}`,
+      );
+      setTruth(loaded.has_ground_truth && loaded.poses.length > 0 ? loaded : null);
+    } catch {
+      setTruth(null);
+    }
+  }, []);
 
   /**
    * Load the scores first, because they decide what the viewer should draw.
@@ -53,55 +87,45 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
    * means anything: unaligned, the two sit in different frames at different scales. An
    * unscored run gets the raw estimate on its own, and says so.
    */
-  const loadResults = useCallback(async () => {
-    let scored: MetricsResponse | null = null;
-    try {
-      scored = await api.get<MetricsResponse>(`/api/runs/${runId}/metrics`);
-      setMetrics(scored);
-    } catch {
-      setMetrics(null);
-    }
+  const loadResults = useCallback(
+    async (datasetId: string) => {
+      let scored: MetricsResponse | null = null;
+      try {
+        scored = await api.get<MetricsResponse>(`/api/runs/${runId}/metrics`);
+        setMetrics(scored);
+      } catch {
+        setMetrics(null);
+      }
 
-    const aligned = Boolean(scored?.metrics);
-    try {
-      const loaded = await api.get<TrajectoryResponse>(
-        `/api/runs/${runId}/trajectory${aligned ? "?aligned=true" : ""}`,
-      );
-      setTrajectory(loaded);
-    } catch {
-      setTrajectory(null);
-    }
+      const aligned = Boolean(scored?.metrics);
+      let estimated: TrajectoryResponse | null = null;
+      try {
+        estimated = await api.get<TrajectoryResponse>(
+          `/api/runs/${runId}/trajectory${aligned ? "?aligned=true" : ""}`,
+        );
+        setTrajectory(estimated);
+      } catch {
+        setTrajectory(null);
+      }
 
-    if (!aligned) {
-      setErrors(null);
-      setTruth(null);
-      return;
-    }
+      if (!aligned) {
+        setErrors(null);
+        setTruth(null);
+        return;
+      }
 
-    try {
-      setErrors(await api.get<PoseErrorsResponse>(`/api/runs/${runId}/errors`));
-    } catch {
-      setErrors(null);
-    }
-  }, [runId]);
+      // truth is fetched after the estimate, because the span the estimate covers is what
+      // decides how much of truth is worth drawing
+      if (estimated?.poses.length) void loadTruth(datasetId, estimated.poses);
 
-  /**
-   * Ground truth for the overlay, decimated.
-   *
-   * A room sequence carries over 16000 truth poses against a couple of thousand estimated
-   * ones. Drawing every one costs a lot of geometry to render a line that is already
-   * visually continuous at a fraction of the density.
-   */
-  const loadTruth = useCallback(async (datasetId: string) => {
-    try {
-      const loaded = await api.get<GroundTruthResponse>(
-        `/api/datasets/${datasetId}/ground-truth?stride=${TRUTH_STRIDE}`,
-      );
-      setTruth(loaded.has_ground_truth && loaded.poses.length > 0 ? loaded : null);
-    } catch {
-      setTruth(null);
-    }
-  }, []);
+      try {
+        setErrors(await api.get<PoseErrorsResponse>(`/api/runs/${runId}/errors`));
+      } catch {
+        setErrors(null);
+      }
+    },
+    [runId, loadTruth],
+  );
 
   const load = useCallback(async () => {
     setError(null);
@@ -109,10 +133,10 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
       const found = await api.get<Run>(`/api/runs/${runId}`);
       setRun(found);
       setLoading(false);
-      void loadTruth(found.dataset_id);
       if (found.status === "done" || found.status === "failed") {
-        await loadResults();
+        await loadResults(found.dataset_id);
       } else {
+        setStreamingDatasetId(found.dataset_id);
         setStreaming(true);
       }
     } catch (caught) {
@@ -120,7 +144,7 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
       setError(caught instanceof ApiError ? caught.message : "Could not load this run.");
       setLoading(false);
     }
-  }, [runId, loadResults, loadTruth]);
+  }, [runId, loadResults]);
 
   useEffect(() => {
     void load();
@@ -180,7 +204,7 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
    * stale run, and the effect does not re-run on every progress event.
    */
   useEffect(() => {
-    if (!streaming) return;
+    if (!streaming || !streamingDatasetId) return;
 
     const source = new EventSource(`/api/runs/${runId}/events`, {
       withCredentials: true,
@@ -204,13 +228,13 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
       if (progress.status === "done" || progress.status === "failed") {
         source.close();
         setStreaming(false);
-        void loadResults();
+        void loadResults(streamingDatasetId);
       }
     };
 
     source.onerror = () => source.close();
     return () => source.close();
-  }, [runId, streaming, loadResults]);
+  }, [runId, streaming, streamingDatasetId, loadResults]);
 
   if (loading) {
     return (
@@ -383,8 +407,31 @@ const RunDetailScreen: FC<{ runId: string }> = ({ runId }) => {
 
           {!inFlight && processed_frames > 0 ? (
             <section className="flex flex-col gap-2">
-              <h2 className="font-medium text-sm">Feature tracking</h2>
-              <TrackingView runId={runId} frameCount={processed_frames} />
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="font-medium text-sm">Feature tracking</h2>
+                {status === "failed" && failure_frame !== null ? (
+                  <span className="text-muted-foreground text-xs">
+                    Opened at frame {formatCount(failure_frame)}, where the run failed
+                  </span>
+                ) : null}
+              </div>
+              {/*
+                a failed run opens on the frame it failed at rather than at the start. That
+                frame is the reason the run ended, and what its features look like there is
+                usually the answer: a blank wall, or every point in one corner.
+              */}
+              <TrackingView
+                runId={runId}
+                frameCount={processed_frames}
+                initialFrame={status === "failed" && failure_frame !== null ? failure_frame : 0}
+              />
+            </section>
+          ) : null}
+
+          {!inFlight ? (
+            <section className="flex flex-col gap-2">
+              <h2 className="font-medium text-sm">Estimator log</h2>
+              <RunLog runId={runId} />
             </section>
           ) : null}
         </div>

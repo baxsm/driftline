@@ -2,12 +2,14 @@
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import delete, func, insert, select
-from sqlalchemy.orm import Session
+from sqlalchemy import delete, func, insert, nullslast, select
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.sql.elements import UnaryExpression
 
 import logger
-from db.models import Dataset, Pose, Run
+from db.models import Dataset, Pose, Run, RunMetrics
 from estimator.config import EstimatorConfig
 
 from ..errors import ApiError
@@ -38,16 +40,45 @@ def list_runs(
     dataset_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    sort: str = "created",
+    status: str | None = None,
 ) -> tuple[list[Run], int]:
+    """Runs for one user, newest first by default or best first when sorted by ATE.
+
+    Sorting happens in the database rather than in the client. The list is paginated, so
+    sorting the page that arrived would order fifty rows out of however many exist and present
+    the best of those fifty as the best overall.
+
+    An unscored run has no ATE to sort by. Those rows sort last under `nullslast` rather than
+    being filtered out, because "this run was never scored" is a state worth seeing in the list
+    and dropping it would make runs disappear when the sort changed.
+    """
     filters = [Run.user_id == user_id]
     if dataset_id:
         filters.append(Run.dataset_id == _parse_id(dataset_id))
+    if status:
+        filters.append(Run.status == status)
 
     total = session.scalar(select(func.count()).select_from(Run).where(*filters)) or 0
+
+    orders: dict[str, UnaryExpression[Any]] = {
+        "ate": nullslast(RunMetrics.ate_rmse.asc()),
+        "created": Run.created_at.desc(),
+        "dataset": Dataset.name.asc(),
+    }
+    order = orders.get(sort, orders["created"])
+
     statement = (
         select(Run)
+        .join(Dataset, Dataset.id == Run.dataset_id)
+        .outerjoin(RunMetrics, RunMetrics.run_id == Run.id)
+        # the list renders each run's dataset name and ATE, so both are loaded with the page
+        # rather than lazily per row, which would be two more queries for every run listed
+        .options(joinedload(Run.dataset), joinedload(Run.metrics))
         .where(*filters)
-        .order_by(Run.created_at.desc())
+        # a stable tiebreak, so two runs with equal ATE or the same dataset name do not swap
+        # places between requests and make the list look like it is reordering itself
+        .order_by(order, Run.created_at.desc())
         .limit(limit)
         .offset(offset)
     )

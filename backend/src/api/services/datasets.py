@@ -116,17 +116,31 @@ def delete_dataset(session: Session, user_id: uuid.UUID, dataset_id: str) -> Non
 
 
 def ground_truth_poses(
-    session: Session, dataset_id: uuid.UUID, stride: int = 1
+    session: Session,
+    dataset_id: uuid.UUID,
+    stride: int = 1,
+    from_ns: int | None = None,
+    to_ns: int | None = None,
 ) -> tuple[list[GroundTruthPose], int]:
     """Return the decimated poses and the total before decimation.
 
     The total is what the UI needs to say "N of M drawn" honestly. Without it the caller has
     to compare against the frame count, which is a different number entirely.
+
+    The optional window exists because truth covers the whole recording while a run may cover
+    a slice of it. Overlaying all 141 seconds of a room sequence on a run that estimated 12 of
+    them draws a dense tangle the short estimate disappears into, and implies the estimate
+    spans a path it never saw. The window is applied before decimation, so the total still
+    counts the poses in the range asked for.
     """
+    filters = [GroundTruthPose.dataset_id == dataset_id]
+    if from_ns is not None:
+        filters.append(GroundTruthPose.timestamp_ns >= from_ns)
+    if to_ns is not None:
+        filters.append(GroundTruthPose.timestamp_ns <= to_ns)
+
     statement = (
-        select(GroundTruthPose)
-        .where(GroundTruthPose.dataset_id == dataset_id)
-        .order_by(GroundTruthPose.timestamp_ns)
+        select(GroundTruthPose).where(*filters).order_by(GroundTruthPose.timestamp_ns)
     )
     poses = list(session.scalars(statement))
     return (poses[::stride] if stride > 1 else poses), len(poses)

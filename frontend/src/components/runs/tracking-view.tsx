@@ -18,6 +18,13 @@ const AGE_CEILING = 30;
 interface TrackingViewProps {
   runId: string;
   frameCount: number;
+  /**
+   * Where the scrubber opens. A failed run points this at the frame it failed on, because
+   * that frame is the reason the run ended and starting at frame 0 asks the reader to go and
+   * find it. Both this and the stored tracks count from the start of the run, not the
+   * sequence, so a run with `start_frame` set still lands on the right image.
+   */
+  initialFrame?: number;
 }
 
 /**
@@ -48,12 +55,16 @@ function mix(from: [number, number, number], to: [number, number, number], amoun
   return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
 }
 
-const TrackingView: FC<TrackingViewProps> = ({ runId, frameCount }) => {
+const TrackingView: FC<TrackingViewProps> = ({ runId, frameCount, initialFrame = 0 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const framesRef = useRef<Map<number, TrackFrame>>(new Map());
   const imageRef = useRef<HTMLImageElement | null>(null);
 
-  const [frameIndex, setFrameIndex] = useState(0);
+  // clamped, because a failure frame from a run whose poses were trimmed could sit past the
+  // last frame the scrubber can reach, which would leave it pinned at an index with no image
+  const [frameIndex, setFrameIndex] = useState(() =>
+    Math.max(0, Math.min(initialFrame, Math.max(0, frameCount - 1))),
+  );
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState<TrackFrame | null>(null);
   const [error, setError] = useState<string | null>(null);

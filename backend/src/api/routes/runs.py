@@ -55,10 +55,18 @@ def list_runs(
     dataset_id: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    sort: str = Query(default="created", pattern="^(created|ate|dataset)$"),
+    status: str | None = Query(default=None, pattern="^(queued|running|done|failed)$"),
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    rows, total = service.list_runs(session, user.id, dataset_id, limit, offset)
+    """Runs for the signed in user. Sorting by `ate` answers which config was best.
+
+    `sort` and `status` are patterned rather than free text so an unknown value is a 422 the
+    caller can see, instead of silently falling back to the default order and returning a list
+    that looks sorted and is not.
+    """
+    rows, total = service.list_runs(session, user.id, dataset_id, limit, offset, sort, status)
     return {"runs": [run_summary(run) for run in rows], "total": total}
 
 

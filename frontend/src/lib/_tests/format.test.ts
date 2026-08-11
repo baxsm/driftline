@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
+  configLabel,
+  formatConfigValue,
   formatCount,
   formatDate,
   formatDegrees,
+  formatDelta,
   formatDuration,
   formatMetres,
+  formatMetric,
   formatRate,
   formatScale,
   formatToleranceMs,
   progressPercent,
   SOURCE_LABELS,
   shortHash,
+  truthWindowQuery,
 } from "@/lib/format";
 
 describe("formatScale", () => {
@@ -142,5 +147,103 @@ describe("SOURCE_LABELS", () => {
     expect(SOURCE_LABELS.tum_vi).toBe("TUM VI");
     expect(SOURCE_LABELS.euroc).toBe("EuRoC");
     expect(SOURCE_LABELS.custom).toBe("Custom");
+  });
+});
+
+describe("formatDelta", () => {
+  it("calls a negative delta better, because lower is better for every metric shown", () => {
+    expect(formatDelta("ate_rmse", -0.32)).toBe("32.0 cm better");
+  });
+
+  it("calls a positive delta worse", () => {
+    expect(formatDelta("ate_rmse", 0.32)).toBe("32.0 cm worse");
+  });
+
+  it("says a null delta is not comparable rather than printing zero", () => {
+    expect(formatDelta("ate_rmse", null)).toBe("not comparable");
+  });
+
+  it("distinguishes no change from not comparable", () => {
+    expect(formatDelta("ate_rmse", 0)).toBe("no change");
+  });
+
+  it("uses degrees for a rotation metric", () => {
+    expect(formatDelta("rpe_rot_rmse", -3.72)).toBe("3.72° better");
+  });
+});
+
+describe("formatMetric", () => {
+  it("prints a translation metric in metres", () => {
+    expect(formatMetric("ate_rmse", 0.853)).toBe("85.3 cm");
+  });
+
+  it("prints a rotation metric in degrees", () => {
+    expect(formatMetric("rpe_rot_rmse", 1.44)).toBe("1.44°");
+  });
+
+  it("says a missing metric was not measured", () => {
+    expect(formatMetric("rpe_trans_rmse", null)).toBe("not measured");
+  });
+});
+
+describe("formatConfigValue", () => {
+  it("reads a boolean as on and off", () => {
+    expect(formatConfigValue(true)).toBe("on");
+    expect(formatConfigValue(false)).toBe("off");
+  });
+
+  it("reads an absent value as unset rather than as blank", () => {
+    expect(formatConfigValue(null)).toBe("unset");
+    expect(formatConfigValue(undefined)).toBe("unset");
+  });
+
+  it("keeps a zero rather than treating it as absent", () => {
+    expect(formatConfigValue(0)).toBe("0");
+  });
+});
+
+describe("configLabel", () => {
+  it("names a known key the way the run form does", () => {
+    expect(configLabel("keyframe_parallax_px")).toBe("Keyframe parallax");
+  });
+
+  it("falls back to the raw key rather than to an empty label", () => {
+    expect(configLabel("something_new")).toBe("something_new");
+  });
+});
+
+describe("truthWindowQuery", () => {
+  it("spans the estimate with padding at both ends", () => {
+    const query = truthWindowQuery([
+      { timestamp_ns: "1520530320000000000" },
+      { timestamp_ns: "1520530330000000000" },
+    ]);
+
+    expect(query).toBe("&from=1520530319500000000&to=1520530330500000000");
+  });
+
+  it("keeps full nanosecond precision, which a JavaScript number cannot", () => {
+    // this is the whole reason timestamps travel as strings
+    const query = truthWindowQuery([{ timestamp_ns: "1520530308199447626" }]);
+
+    expect(query).toContain("1520530307699447626");
+    expect(query).toContain("1520530308699447626");
+  });
+
+  it("asks for no window when there is no estimate to bound it", () => {
+    expect(truthWindowQuery([])).toBe("");
+  });
+
+  it("finds the range even when the poses are not in order", () => {
+    const query = truthWindowQuery([
+      { timestamp_ns: "1520530330000000000" },
+      { timestamp_ns: "1520530320000000000" },
+    ]);
+
+    expect(query).toBe("&from=1520530319500000000&to=1520530330500000000");
+  });
+
+  it("never asks for a negative timestamp", () => {
+    expect(truthWindowQuery([{ timestamp_ns: "1000" }])).toContain("&from=0&");
   });
 });

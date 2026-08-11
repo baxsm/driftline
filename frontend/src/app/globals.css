@@ -22,6 +22,7 @@
   --color-error-low: var(--error-low);
   --color-error-high: var(--error-high);
   --color-estimate-path: var(--estimate-path);
+  --color-compare-path: var(--compare-path);
   --color-track-new: var(--track-new);
   --color-track-old: var(--track-old);
   --color-chart-5: var(--chart-5);
@@ -138,6 +139,16 @@
    * mistaken for a reading off that scale.
    */
   --estimate-path: oklch(0.70 0.15 275);
+
+  /*
+   * The second run on the compare screen. Run A keeps `--estimate-path`, so this is the one
+   * new hue that screen introduces, and it has to stay legible against everything already on
+   * the canvas: the estimate at 275, truth at a near neutral 250, and both ends of the error
+   * ramp at 195 and 35. 145 is the widest gap left, and it holds that separation for the
+   * common red-green and blue-yellow deficiencies because it differs from the estimate in
+   * lightness as well as hue rather than in hue alone.
+   */
+  --compare-path: oklch(0.78 0.16 145);
 
   /*
    * Feature age, young to old. Same idea as the error ramp: one sweep, read as duration
