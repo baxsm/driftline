@@ -22,6 +22,8 @@ next-env.d.ts
 
 # test artifacts
 **/e2e/screenshots/
+# the capture working set; the ones the readme uses are copied into public/readme
+**/e2e/readme/
 playwright-report/
 test-results/
 

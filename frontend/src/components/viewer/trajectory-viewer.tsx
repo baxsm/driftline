@@ -252,7 +252,14 @@ const TrajectoryViewer: FC<TrajectoryViewerProps> = ({
     function resize() {
       const { clientWidth, clientHeight } = mount as HTMLDivElement;
       if (clientWidth === 0 || clientHeight === 0) return;
-      renderer.setSize(clientWidth, clientHeight, false);
+      /*
+       * The canvas gets its CSS size from here as well as its drawing buffer. Nothing else
+       * sizes it, so skipping the style left it at the buffer size: on a display reporting a
+       * pixel ratio of 2 that is twice the container, and the path drew off centre and spilled
+       * out of the panel. The two arguments are CSS pixels and the pixel ratio scales the
+       * buffer behind them.
+       */
+      renderer.setSize(clientWidth, clientHeight);
       camera.aspect = clientWidth / clientHeight;
       camera.updateProjectionMatrix();
     }
