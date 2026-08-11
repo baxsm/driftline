@@ -350,8 +350,7 @@ const RunConfigForm: FC<RunConfigFormProps> = ({ frameCount, onQueue }) => {
                     onChange={(event) => update("start_frame", event.target.value)}
                   />
                   <span id="hint-start_frame" className="text-muted-foreground text-xs">
-                    Skip the beginning. A sequence that opens with the camera held still cannot be
-                    solved until it moves.
+                    Skip the beginning, to run over a later slice of the sequence.
                   </span>
                 </div>
 

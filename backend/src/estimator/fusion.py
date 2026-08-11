@@ -735,13 +735,12 @@ def _initial_velocity(
 ) -> Array:
     """Solve for how fast the device was already moving at the first keyframe.
 
-    A run does not have to begin at rest, and here it usually does not: `start_frame` exists
-    so a sequence that opens with the camera held still can be started where it moves, and at
-    that point the device is already travelling. This is not a detail. Seeding the graph at
-    zero velocity when the truth is 2.2 m/s leaves the optimiser at 1.87 m rmse on the
-    synthetic path, against 0.007 m when the starting velocity is right, because the
-    preintegration factors are consistent with a whole family of trajectories and the starting
-    velocity is what picks one out of it.
+    A run does not have to begin at rest, and here it usually does not: any run using
+    `start_frame` opens partway through a recording, with the device already travelling. This
+    is not a detail. Seeding the graph at zero velocity when the truth is 2.2 m/s leaves the
+    optimiser at 1.87 m rmse on the synthetic path, against 0.007 m when the starting velocity
+    is right, because the preintegration factors are consistent with a whole family of
+    trajectories and the starting velocity is what picks one out of it.
     """
     usable = min(len(keyframes) - 1, INITIAL_VELOCITY_KEYFRAMES)
     if usable < 2:
