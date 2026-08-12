@@ -1,0 +1,36 @@
+# The inertial runtime.
+#
+# This does not extend requirements.txt, and it cannot. gtsam 4.2.2 is the newest release and
+# it declares numpy<2, while OpenCV 5 and scipy 1.18 both require numpy>=2. Those constraints
+# have no solution together, so pip fails outright rather than resolving something surprising.
+# This file therefore pins the newest set that does resolve alongside gtsam.
+#
+# The estimator's OpenCV calls were checked across the split rather than assumed compatible:
+# findEssentialMat, decomposeEssentialMat, triangulatePoints, undistortPoints,
+# fisheye.undistortPoints, goodFeaturesToTrack, calcOpticalFlowPyrLK and createCLAHE all return
+# identical results on 4.11 and 5.0 for the same input. Re-run that check if either side moves.
+#
+# `recoverPose` is deliberately absent: it is not called any more, because its inlier count is
+# wrong on distant scenes on both versions. `motion.py` explains the measurement.
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+pydantic==2.13.4
+pydantic-settings==2.15.0
+email-validator==2.3.0
+sqlalchemy==2.0.51
+alembic==1.19.1
+psycopg[binary]==3.3.4
+argon2-cffi==25.1.0
+itsdangerous==2.2.0
+pyyaml==6.0.3
+evo==1.37.0
+
+numpy==1.26.4
+scipy==1.17.1
+opencv-python==4.11.0.86
+gtsam==4.2.2
+
+# `artifacts.py` writes tracks.parquet, which needs an engine. pandas arrives with evo but
+# pyarrow does not, and without it a run crashes after the estimate is already computed.
+pandas==2.2.3
+pyarrow==18.1.0

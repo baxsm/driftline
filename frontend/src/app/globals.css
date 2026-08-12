@@ -1,0 +1,376 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-geist-sans);
+  --color-truth-path: var(--truth-path);
+  --color-error-low: var(--error-low);
+  --color-error-high: var(--error-high);
+  --color-error-rot: var(--error-rot);
+  --color-estimate-path: var(--estimate-path);
+  --color-compare-path: var(--compare-path);
+  --color-track-new: var(--track-new);
+  --color-track-old: var(--track-old);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-surface-page: var(--surface-page);
+  --color-surface-panel: var(--surface-panel);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-status-success: var(--status-success);
+  --color-status-success-bg: var(--status-success-bg);
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-bg: var(--status-warning-bg);
+  --color-status-danger: var(--status-danger);
+  --color-status-danger-bg: var(--status-danger-bg);
+  --color-status-info: var(--status-info);
+  --color-status-info-bg: var(--status-info-bg);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* the ladder inverts in light: surfaces sit slightly darker as they rise, not lighter */
+  --surface-page: oklch(1 0 0);
+  --surface-panel: oklch(0.99 0.002 275);
+  --surface-raised: oklch(0.97 0.003 275);
+  --surface-overlay: oklch(1 0 0);
+
+  --status-success: oklch(0.52 0.14 155);
+  --status-success-bg: oklch(0.94 0.04 155);
+  --status-warning: oklch(0.55 0.13 75);
+  --status-warning-bg: oklch(0.95 0.05 85);
+  --status-danger: oklch(0.55 0.20 25);
+  --status-danger-bg: oklch(0.95 0.03 25);
+  --status-info: oklch(0.52 0.16 275);
+  --status-info-bg: oklch(0.95 0.03 275);
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+
+  /*
+   * Motion. Two durations and one easing, so a transition added later matches the ones
+   * already here instead of inventing its own timing. Everything decorative is quick enough
+   * to read as feedback rather than as an effect being played.
+   */
+  --motion-quick: 120ms;
+  --motion-settle: 220ms;
+  --motion-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  /*
+   * A decelerating curve for things arriving. It stops hard rather than easing out both
+   * ends, which is what makes a panel read as having landed rather than as having drifted in.
+   */
+  --motion-enter: cubic-bezier(0.165, 0.84, 0.44, 1);
+  /** One row's share of a staggered list. Past about eight rows a stagger reads as lag. */
+  --motion-stagger: 26ms;
+}
+
+.dark {
+  /*
+   * A surface ladder, not a set of boxes.
+   *
+   * Depth in dark comes from lightness steps: a surface that sits above another is lighter,
+   * because a dark shadow on a dark ground has nothing to contrast against. Every step here
+   * is about 0.03 in oklch lightness, which is the separation Radix and Linear both land on.
+   * Drawing a border around each level instead is what produced the box inside a box inside
+   * a box, so borders are now for the outermost edge and for controls, and the steps carry
+   * the rest.
+   *
+   * The greys are not neutral. A trace of the estimate's own hue (275) runs through them, so
+   * the chrome reads as chosen rather than as the default grey every dark theme ships with.
+   */
+  --surface-page: oklch(0.16 0.006 275);
+  --surface-panel: oklch(0.195 0.006 275);
+  --surface-raised: oklch(0.235 0.007 275);
+  --surface-overlay: oklch(0.265 0.008 275);
+
+  --background: var(--surface-page);
+  --foreground: oklch(0.97 0.004 275);
+  --card: var(--surface-panel);
+  --card-foreground: oklch(0.97 0.004 275);
+  --popover: var(--surface-overlay);
+  --popover-foreground: oklch(0.97 0.004 275);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.2 0.006 275);
+  --secondary: var(--surface-raised);
+  --secondary-foreground: oklch(0.97 0.004 275);
+  --muted: var(--surface-raised);
+  --muted-foreground: oklch(0.70 0.012 275);
+  --accent: var(--surface-raised);
+  --accent-foreground: oklch(0.97 0.004 275);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.70 0.15 275);
+
+  /*
+   * Status, kept away from the trajectory hues so a badge is never mistaken for a reading.
+   * Each is a tinted surface with a light foreground, rather than a saturated fill, because
+   * a run list where every row shouts has no hierarchy left.
+   */
+  --status-success: oklch(0.78 0.15 155);
+  --status-success-bg: oklch(0.30 0.06 155 / 45%);
+  --status-warning: oklch(0.83 0.15 85);
+  --status-warning-bg: oklch(0.32 0.06 85 / 45%);
+  --status-danger: oklch(0.75 0.17 22);
+  --status-danger-bg: oklch(0.32 0.08 22 / 45%);
+  --status-info: oklch(0.76 0.13 275);
+  --status-info-bg: oklch(0.32 0.07 275 / 45%);
+
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+
+  /*
+   * Reserved for trajectory meaning, never for chrome. Ground truth is neutral because it
+   * is the reference, not a subject. The error ramp is one sequential hue sweep from low to
+   * high so the eye reads magnitude rather than category, and both of its ends stay clear of
+   * the truth grey.
+   */
+  --truth-path: oklch(0.78 0.005 250);
+  --error-low: oklch(0.72 0.14 195);
+  --error-high: oklch(0.70 0.19 35);
+
+  /*
+   * Rotation error is a second series, not a second magnitude. Drawing it on `--error-high`
+   * put both plots in the same red, so the only thing separating position from rotation was
+   * the label above each one. This hue sits off the magnitude ramp for that reason: it reads
+   * as a different quantity rather than as a hotter reading of the same one.
+   */
+  --error-rot: oklch(0.76 0.13 300);
+
+  /*
+   * The estimate is the subject, so it carries the only saturated hue on the path. It sits
+   * away from both ends of the error ramp so an estimate overlaid on error colouring is never
+   * mistaken for a reading off that scale.
+   */
+  --estimate-path: oklch(0.70 0.15 275);
+
+  /*
+   * The second run on the compare screen. Run A keeps `--estimate-path`, so this is the one
+   * new hue that screen introduces, and it has to stay legible against everything already on
+   * the canvas: the estimate at 275, truth at a near neutral 250, and both ends of the error
+   * ramp at 195 and 35. 145 is the widest gap left, and it holds that separation for the
+   * common red-green and blue-yellow deficiencies because it differs from the estimate in
+   * lightness as well as hue rather than in hue alone.
+   */
+  --compare-path: oklch(0.78 0.16 145);
+
+  /*
+   * Feature age, young to old. Same idea as the error ramp: one sweep, read as duration
+   * rather than as category.
+   */
+  --track-new: oklch(0.72 0.14 195);
+  --track-old: oklch(0.78 0.16 95);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  button:not(:disabled), [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  html {
+    @apply font-sans;
+  }
+
+  /*
+   * One switch for every animation in the app. Motion here is feedback, never content, so
+   * removing it costs nothing: the same states are still reachable and still readable. The
+   * near-zero duration rather than `none` keeps transitionend and animationend handlers
+   * firing, which a plain `animation: none` would strand.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      /* the delay has to go too, or a staggered list still waits its way down the page */
+      animation-delay: 0ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /*
+   * Rows and panels fade up as they arrive. The travel is deliberately small; this marks
+   * that content appeared, it is not an effect worth watching on every navigation.
+   */
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .animate-rise-in {
+    animation: rise-in var(--motion-settle) var(--motion-enter) both;
+  }
+
+  /*
+   * A staggered list. Each row starts a beat after the one above it, so a list reads as
+   * filling in rather than as appearing all at once.
+   *
+   * Capped at eight. Past that the last row waits long enough that the stagger stops looking
+   * deliberate and starts looking like the page is slow, which on a long run list it would
+   * be doing on every poll.
+   */
+  .stagger-rows > *:nth-child(-n + 8) {
+    animation: rise-in var(--motion-settle) var(--motion-enter) both;
+  }
+  .stagger-rows > *:nth-child(2) { animation-delay: calc(var(--motion-stagger) * 1); }
+  .stagger-rows > *:nth-child(3) { animation-delay: calc(var(--motion-stagger) * 2); }
+  .stagger-rows > *:nth-child(4) { animation-delay: calc(var(--motion-stagger) * 3); }
+  .stagger-rows > *:nth-child(5) { animation-delay: calc(var(--motion-stagger) * 4); }
+  .stagger-rows > *:nth-child(6) { animation-delay: calc(var(--motion-stagger) * 5); }
+  .stagger-rows > *:nth-child(7) { animation-delay: calc(var(--motion-stagger) * 6); }
+  .stagger-rows > *:nth-child(8) { animation-delay: calc(var(--motion-stagger) * 7); }
+
+  /*
+   * A run that is still going. The docs reserve colour for abnormal states, so a live run is
+   * marked by motion rather than by a green dot that would read as a result.
+   */
+  @keyframes live-pulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.35;
+      transform: scale(0.82);
+    }
+  }
+
+  .animate-live-pulse {
+    animation: live-pulse 1.8s var(--motion-ease) infinite;
+  }
+
+  /*
+   * The scrubber under the plots and the tracking view. `accent-color` alone leaves the
+   * browser's default track, which is a raised grey bar that belongs to no other control in
+   * the app. The thumb grows on hover and while dragging so the grab point is obvious on a
+   * plot that is only a few pixels tall.
+   */
+  .scrubber {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .scrubber::-webkit-slider-runnable-track {
+    height: 3px;
+    border-radius: 9999px;
+    background: var(--border);
+  }
+
+  .scrubber::-moz-range-track {
+    height: 3px;
+    border-radius: 9999px;
+    background: var(--border);
+  }
+
+  .scrubber::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -4.5px;
+    border: none;
+    border-radius: 9999px;
+    background: var(--foreground);
+    transition: transform var(--motion-quick) var(--motion-ease);
+  }
+
+  .scrubber::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: none;
+    border-radius: 9999px;
+    background: var(--foreground);
+    transition: transform var(--motion-quick) var(--motion-ease);
+  }
+
+  .scrubber:hover::-webkit-slider-thumb,
+  .scrubber:active::-webkit-slider-thumb {
+    transform: scale(1.25);
+  }
+
+  .scrubber:hover::-moz-range-thumb,
+  .scrubber:active::-moz-range-thumb {
+    transform: scale(1.25);
+  }
+
+  .scrubber:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring), transparent 50%);
+  }
+
+  .scrubber:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring), transparent 50%);
+  }
+}

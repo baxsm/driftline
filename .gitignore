@@ -1,0 +1,36 @@
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.venv-*/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# env
+.env
+.env.*
+!.env.example
+
+# test artifacts
+**/e2e/screenshots/
+# the capture working set; the ones the readme uses are copied into public/readme
+**/e2e/readme/
+playwright-report/
+test-results/
+
+# runtime storage
+storage/
+
+# local datasets, never committed
+data/
+*.tar
+*.tar.md5

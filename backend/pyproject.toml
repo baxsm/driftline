@@ -1,0 +1,51 @@
+[project]
+name = "driftline-backend"
+version = "0.1.0"
+requires-python = ">=3.13"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["src"]
+python_files = ["test_*.py"]
+addopts = "-q --strict-markers"
+markers = [
+    "integration: needs a real sequence on disk, set DRIFTLINE_TEST_SEQUENCE",
+]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# alembic writes these files, so they follow its template rather than our lint rules
+"migrations/versions/*" = ["E501", "UP007", "UP035", "I001"]
+# the model imports have to follow the sys.path insert that makes src importable
+"migrations/env.py" = ["E402", "I001"]
+# app imports have to follow the environment defaults the fixtures set
+"src/api/_tests/conftest.py" = ["E402", "I001"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Depends/Query in a default is how FastAPI declares dependencies, not a mutable default
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
+
+[tool.mypy]
+python_version = "3.13"
+mypy_path = "src"
+strict = true
+warn_unreachable = true
+disallow_untyped_defs = true
+# tests are checked by running them; pytest fixtures carry types through decorators in a
+# way that only adds annotation noise here
+exclude = ["_tests/"]
+
+[[tool.mypy.overrides]]
+# gtsam ships no stubs and no Windows wheel, so it is unresolvable on this machine by
+# design; `estimator/fusion.py` imports it at call time and reports a real reason when the
+# runtime does not have it
+module = ["evo.*", "cv2.*", "yaml.*", "pandas.*", "gtsam.*"]
+ignore_missing_imports = true
+

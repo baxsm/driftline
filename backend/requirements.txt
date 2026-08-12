@@ -1,0 +1,21 @@
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+pydantic==2.13.4
+pydantic-settings==2.15.0
+email-validator==2.3.0
+sqlalchemy==2.0.51
+alembic==1.19.1
+psycopg[binary]==3.3.4
+argon2-cffi==25.1.0
+itsdangerous==2.2.0
+pyyaml==6.0.3
+numpy==2.5.2
+scipy==1.18.0
+opencv-python==5.0.0.93
+evo==1.37.0
+# `artifacts.py` imports pandas directly and writes tracks.parquet, so both are direct
+# dependencies rather than evo's. They were unpinned and arrived through evo by luck, which
+# held here and broke in the fusion image: pandas came along, pyarrow did not, and a run
+# crashed after the estimate was already computed with "Unable to find a usable engine".
+pandas==3.0.5
+pyarrow==25.0.1
