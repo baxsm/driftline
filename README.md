@@ -53,7 +53,7 @@ That distinction is carried everywhere rather than hidden. A run states the alig
 **Comparison that refuses to mislead you.** Two runs go side by side with the config diff, both paths in one viewer, and a metrics table. When the two were aligned differently the delta column is withheld and the reason is stated, because the difference between a Sim(3) figure and an SE(3) one measures the alignment rather than the estimator.
 
 <p align="center">
-  <img src="frontend/public/readme/compare.png" width="880" alt="The compare screen with ground truth, the visual inertial run in blue and the 1200 feature run in green in one viewer. The scores table below says the runs were aligned differently, that Sim(3) fits scale onto ground truth and SE(3) does not, and every row of the change column reads not comparable.">
+  <img src="frontend/public/readme/compare.png" width="880" alt="The compare screen for the visual inertial run against the 1200 feature run. A settings table names the four values that differ between them, including the estimator mode. Below it both estimates are drawn with ground truth in one viewer, the inertial run in blue and the monocular one in green.">
 </p>
 
 **Every estimator field, with its range and what it does.** Twelve parameters, each labelled with what it trades off and the values it takes. Tuning a run does not mean reading the estimator source, and a value out of range is rejected before the run is queued.
