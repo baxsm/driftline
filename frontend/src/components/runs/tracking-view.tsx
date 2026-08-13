@@ -78,6 +78,17 @@ const TrackingView: FC<TrackingViewProps> = ({ runId, frameCount, initialFrame =
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadedWindow, setLoadedWindow] = useState<number | null>(null);
+  /**
+   * Windows whose fetch has come back, whether or not it carried this frame.
+   *
+   * A run can finish having stored no tracks, and the window then comes back empty. Without
+   * this, a frame missing from the map is indistinguishable from one not asked for yet, so
+   * the seek reads as loading forever. Once the window has answered, a missing frame is
+   * itself the answer: this run recorded no features there.
+   */
+  const answeredRef = useRef<Set<number>>(new Set());
+  /** Bumped per answered window, since a ref alone does not re-render. */
+  const [answered, setAnswered] = useState(0);
 
   /** Whether playback was running when a drag started, so release can put it back. */
   const resumeRef = useRef(false);
@@ -99,6 +110,8 @@ const TrackingView: FC<TrackingViewProps> = ({ runId, frameCount, initialFrame =
         );
         if (cancelled) return;
         for (const frame of response.frames) framesRef.current.set(frame.frame_index, frame);
+        answeredRef.current.add(windowStart);
+        setAnswered((count) => count + 1);
         setLoadedWindow(windowStart);
         setError(null);
       } catch (caught) {
@@ -122,12 +135,12 @@ const TrackingView: FC<TrackingViewProps> = ({ runId, frameCount, initialFrame =
    * tracker had died. The last frame is held instead, and `pending` says the fetch is still
    * out, so the seek reads as loading rather than as a result.
    */
-  // biome-ignore lint/correctness/useExhaustiveDependencies: loadedWindow signals the ref changed
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loadedWindow and answered signal the refs changed
   useEffect(() => {
     const frame = framesRef.current.get(frameIndex);
     if (frame) setCurrent(frame);
-    setPending(!frame);
-  }, [frameIndex, loadedWindow]);
+    setPending(!frame && !answeredRef.current.has(windowStart));
+  }, [frameIndex, loadedWindow, answered, windowStart]);
 
   /** Draws the frame, then its features. Redraws once the image itself has decoded. */
   const paint = useCallback(() => {
@@ -192,6 +205,10 @@ const TrackingView: FC<TrackingViewProps> = ({ runId, frameCount, initialFrame =
   }, [playing, frameCount]);
 
   const trackedCount = current?.features.length ?? 0;
+  // the window answered and this frame was not in it. Reading that as "0 features tracked"
+  // would report a tracker collapse the run never had.
+  const untracked =
+    !pending && !framesRef.current.has(frameIndex) && answeredRef.current.has(windowStart);
 
   /*
    * Keyboard control, scoped to the viewer rather than the window.
@@ -312,9 +329,9 @@ const TrackingView: FC<TrackingViewProps> = ({ runId, frameCount, initialFrame =
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground text-xs">
           {/*
-            "loading" and "none found" are different readings and are never collapsed. A
-            pending window used to render as zero features, which says the tracker lost every
-            point on a frame where it had not been asked yet.
+            Three readings, never collapsed into each other: the fetch is still out, it came
+            back with nothing for this frame, or a real count. Collapsing the first two prints
+            zero features on a frame that was never asked about, which says the tracker died.
           */}
           <span aria-live="polite">
             {pending ? (
@@ -322,6 +339,8 @@ const TrackingView: FC<TrackingViewProps> = ({ runId, frameCount, initialFrame =
                 <Loader2 className="size-3 animate-spin" aria-hidden />
                 Loading frame {frameIndex}
               </span>
+            ) : untracked ? (
+              "No feature tracks stored for this frame"
             ) : (
               `${formatCount(trackedCount)} features tracked into this frame`
             )}
