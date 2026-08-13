@@ -9,9 +9,15 @@ import AppSidebar from "@/components/app-sidebar";
  */
 export default function AppLayout({ children }: LayoutProps<"/app">) {
   return (
-    <div className="flex min-h-svh">
+    /*
+     * The shell is exactly the viewport and never grows, so the sidebar and topbar stay put
+     * and only the page under them scrolls. `min-h-0` is what lets the content column shrink
+     * inside it: without it a flex child refuses to go below its content height, and the
+     * overflow moves back out to the page.
+     */
+    <div className="flex h-svh overflow-hidden">
       <AppSidebar />
-      <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
     </div>
   );
 }
