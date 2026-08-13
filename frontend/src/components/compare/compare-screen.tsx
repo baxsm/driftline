@@ -10,6 +10,7 @@ import RunStatusBadge from "@/components/runs/run-status-badge";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import Panel from "@/components/ui/panel";
+import { Skeleton } from "@/components/ui/skeleton";
 import TrajectoryViewer, { type TrajectoryPath } from "@/components/viewer/trajectory-viewer";
 import { ApiError, api } from "@/lib/api";
 import { formatCount, shortHash, truthWindowQuery } from "@/lib/format";
@@ -72,6 +73,15 @@ const CompareScreen: FC<CompareScreenProps> = ({ runA, runB }) => {
   const [paths, setPaths] = useState<TrajectoryPath[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  /**
+   * Whether the trajectories are still arriving.
+   *
+   * The comparison itself resolves before them, so the screen is drawn while `paths` is still
+   * empty. Without this the viewer reads that as "neither run produced a path", which is a
+   * result, on runs that produced thousands of poses. Same distinction the run screen draws
+   * with `resultsPending`.
+   */
+  const [pathsPending, setPathsPending] = useState(true);
 
   /**
    * The three paths the viewer draws, fetched after the comparison itself.
@@ -139,16 +149,20 @@ const CompareScreen: FC<CompareScreenProps> = ({ runA, runB }) => {
       return;
     }
     setLoading(true);
+    setPathsPending(true);
     setError(null);
     try {
       const body = await api.get<CompareResponse>(
         `/api/compare?run_a=${encodeURIComponent(runA)}&run_b=${encodeURIComponent(runB)}`,
       );
       setData(body);
-      void loadPaths(body);
+      // deliberately not awaited: the diff and the deltas are worth showing before a few
+      // thousand poses finish arriving. `pathsPending` is what holds the viewer until they do.
+      void loadPaths(body).finally(() => setPathsPending(false));
     } catch (caught) {
       setData(null);
       setPaths([]);
+      setPathsPending(false);
       setError(caught instanceof ApiError ? caught.message : "Could not load this comparison.");
     } finally {
       setLoading(false);
@@ -220,10 +234,15 @@ const CompareScreen: FC<CompareScreenProps> = ({ runA, runB }) => {
                 className="min-h-[min(620px,calc(100svh-9rem))]"
                 bodyClassName="flex min-h-0 flex-1 flex-col p-0"
               >
-                <TrajectoryViewer
-                  paths={paths}
-                  emptyMessage="Neither of these runs produced a path to draw."
-                />
+                {/* paths still in flight are loading, not absent */}
+                {pathsPending ? (
+                  <Skeleton className="min-h-[320px] flex-1 rounded-none" />
+                ) : (
+                  <TrajectoryViewer
+                    paths={paths}
+                    emptyMessage="Neither of these runs produced a path to draw."
+                  />
+                )}
               </Panel>
 
               <Panel title="Scores" bodyClassName="p-0">
