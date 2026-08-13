@@ -1,6 +1,15 @@
 "use client";
 
 import { type FC, useMemo } from "react";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { formatDegrees, formatMetres } from "@/lib/format";
 import type { CompareErrorPoint } from "@/lib/types";
 
@@ -12,18 +21,20 @@ interface CompareErrorPlotProps {
   kind: "translation" | "rotation";
 }
 
-const VIEW_WIDTH = 1000;
-const VIEW_HEIGHT = 200;
-const PADDING_TOP = 12;
-const PADDING_BOTTOM = 20;
+interface MergedPoint {
+  t: number;
+  a?: number;
+  b?: number;
+}
 
 /**
  * Both runs' error series on one pair of axes.
  *
  * Sharing the axes is the whole point, and it only works if both are drawn against the same
- * two ranges. The x axis spans the longer run and the y axis the larger error, so a run that
- * ended early stops partway across instead of being stretched to fill the width, which would
- * make it look like it drifted more slowly than it did.
+ * two ranges. The x axis is a number axis spanning the longer run, so a run that ended early
+ * stops partway across instead of being stretched to fill the width, which would make it look
+ * like it drifted more slowly than it did. A category axis would do exactly that stretching,
+ * which is why the domain is set explicitly.
  *
  * The x axis is seconds elapsed from each run's own first scored pose. Two runs over one
  * sequence can start at different frames, so their absolute timestamps do not share an origin
@@ -31,30 +42,37 @@ const PADDING_BOTTOM = 20;
  * their start frames rather than by anything either estimator did.
  */
 const CompareErrorPlot: FC<CompareErrorPlotProps> = ({ a, b, labelA, labelB, kind }) => {
-  const { pathA, pathB, peak, span } = useMemo(() => {
+  const { data, peak, span } = useMemo(() => {
     const pick = (point: CompareErrorPoint) =>
       kind === "translation" ? point.trans_error : point.rot_error;
     const all = [...a, ...b];
-    if (all.length === 0) return { pathA: "", pathB: "", peak: 0, span: 0 };
+    if (all.length === 0) return { data: [], peak: 0, span: 0 };
 
-    const highest = Math.max(...all.map(pick));
-    const longest = Math.max(...all.map((point) => point.t));
-    const usableHeight = VIEW_HEIGHT - PADDING_TOP - PADDING_BOTTOM;
-    // a flat series at zero, or a run of a single instant, would otherwise divide by zero
-    const yScale = highest > 0 ? highest : 1;
-    const xScale = longest > 0 ? longest : 1;
-
-    function draw(points: CompareErrorPoint[]): string {
-      if (points.length === 0) return "";
-      const drawn = points.map((point) => {
-        const x = (point.t / xScale) * VIEW_WIDTH;
-        const y = PADDING_TOP + usableHeight * (1 - pick(point) / yScale);
-        return `${x.toFixed(2)},${y.toFixed(2)}`;
-      });
-      return `M ${drawn.join(" L ")}`;
+    /**
+     * One row per distinct time, with each run's value on its own key.
+     *
+     * The two runs are scored at their own poses, so their time values rarely line up. Keying
+     * by time puts both on one axis without pairing values that came from different moments.
+     * Most rows therefore hold one run and leave the other null, which is why both lines set
+     * `connectNulls`: without it each line breaks at every row belonging to the other run.
+     */
+    const byTime = new Map<number, MergedPoint>();
+    function put(points: CompareErrorPoint[], key: "a" | "b") {
+      for (const point of points) {
+        const row = byTime.get(point.t) ?? { t: point.t };
+        row[key] = pick(point);
+        byTime.set(point.t, row);
+      }
     }
+    put(a, "a");
+    put(b, "b");
 
-    return { pathA: draw(a), pathB: draw(b), peak: highest, span: longest };
+    const merged = [...byTime.values()].sort((left, right) => left.t - right.t);
+    return {
+      data: merged,
+      peak: Math.max(...all.map(pick)),
+      span: Math.max(...all.map((point) => point.t)),
+    };
   }, [a, b, kind]);
 
   const format = kind === "translation" ? formatMetres : formatDegrees;
@@ -70,33 +88,68 @@ const CompareErrorPlot: FC<CompareErrorPlotProps> = ({ a, b, labelA, labelB, kin
           peak {format(peak)} over {span.toFixed(1)}s
         </span>
       </div>
-      {/* hidden from assistive technology: the delta table above states every figure this
-          draws, and a path element cannot be read as values */}
-      <svg
-        viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
-        preserveAspectRatio="none"
-        className="h-28 w-full rounded-md border border-border bg-muted/10"
-        role="presentation"
-        aria-hidden="true"
-      >
-        <title>
-          {label} for {labelA} and {labelB}
-        </title>
-        <path
-          d={pathA}
-          fill="none"
-          stroke="var(--estimate-path)"
-          strokeWidth={2}
-          vectorEffect="non-scaling-stroke"
-        />
-        <path
-          d={pathB}
-          fill="none"
-          stroke="var(--compare-path)"
-          strokeWidth={2}
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
+      <div className="h-28 w-full rounded-md border border-border bg-muted/10">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 10, right: 10, bottom: 4, left: 4 }}>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+            <XAxis
+              dataKey="t"
+              type="number"
+              // the longer run sets the width; a short run must stop where it ended
+              domain={[0, span > 0 ? span : 1]}
+              tickFormatter={(value: number) => `${value.toFixed(0)}s`}
+              stroke="var(--muted-foreground)"
+              tick={{ fontSize: 10 }}
+              tickLine={false}
+              axisLine={false}
+              minTickGap={24}
+            />
+            <YAxis
+              type="number"
+              domain={[0, peak > 0 ? peak : 1]}
+              width={44}
+              tickFormatter={(value: number) => format(value)}
+              stroke="var(--muted-foreground)"
+              tick={{ fontSize: 10 }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <Tooltip
+              contentStyle={{
+                background: "var(--popover)",
+                border: "1px solid var(--border)",
+                borderRadius: "0.5rem",
+                fontSize: "0.75rem",
+              }}
+              labelFormatter={(value) => `${Number(value).toFixed(2)}s`}
+              formatter={(value, name) => [
+                typeof value === "number" ? format(value) : String(value ?? ""),
+                String(name ?? ""),
+              ]}
+            />
+            <Line
+              type="monotone"
+              dataKey="a"
+              name={labelA}
+              stroke="var(--estimate-path)"
+              strokeWidth={2}
+              dot={false}
+              isAnimationActive={false}
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="b"
+              name={labelB}
+              stroke="var(--compare-path)"
+              strokeWidth={2}
+              dot={false}
+              isAnimationActive={false}
+              connectNulls
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 };
