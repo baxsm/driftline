@@ -160,7 +160,13 @@ test("capture the compare screen", async ({ page }) => {
 
   await page.getByRole("button", { name: "Compare" }).click();
   await page.waitForURL(/\/app\/compare\?/);
-  await page.waitForTimeout(SETTLE_MS);
+  /*
+   * The paths load after the comparison, so the viewer holds a skeleton until they land.
+   * The wait is on the canvas being attached, not the legend: the legend renders from the path
+   * list before three.js has drawn anything, so waiting on it captures an empty panel.
+   */
+  await page.locator("canvas").first().waitFor({ state: "attached" });
+  await page.waitForTimeout(SETTLE_MS * 3);
   await page.screenshot({ path: `${DIR}/compare.png` });
 
   await settleViewer(page, "Both paths");
